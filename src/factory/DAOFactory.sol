@@ -7,6 +7,7 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./IDAOFactory.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title DAOFactory
 /// @notice Deploys and wires together a governance token, staking wrapper,
@@ -28,10 +29,53 @@ import "./IDAOFactory.sol";
 ///      so every quorum/approval/proposal-threshold check in Governance.sol
 ///      is already scoped to staked (committed) supply with zero changes
 ///      needed there.
+///
+///      Clone-based deployment: this factory used to directly `new` all
+///      four contracts per DAO, which embeds each one's FULL creation
+///      bytecode inside the factory's own bytecode - the reason this
+///      factory (and every other one in this system) exceeded Ethereum's
+///      24,576-byte contract size limit by roughly 3x. Deploying the
+///      implementations from inside the factory's own constructor does
+///      NOT fix this - the child's creation bytecode is embedded in the
+///      factory's bytecode regardless of which function contains the
+///      `new` call, constructor included. The four implementations must
+///      be deployed as their own separate, standalone transactions
+///      *before* this factory, with their resulting addresses passed in
+///      here as constructor arguments. createDAO() then deploys cheap
+///      ~45-byte EIP-1167 clones pointing at those addresses, and
+///      initializes each clone exactly as the original constructors did.
+///      StakedGovernanceToken's owner is left as the factory (never
+///      transferred to governance) - preserving the original's existing
+///      behavior exactly, not a new design choice introduced by this
+///      conversion.
 contract DAOFactory is IDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable governanceImplementation;
+
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
+
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address governanceImplementation_
+    ) {
+        require(governanceTokenImplementation_ != address(0), "Zero implementation");
+        require(stakedGovernanceTokenImplementation_ != address(0), "Zero implementation");
+        require(treasuryImplementation_ != address(0), "Zero implementation");
+        require(governanceImplementation_ != address(0), "Zero implementation");
+
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        governanceImplementation = governanceImplementation_;
+    }
 
     function createDAO(
         string calldata name,
@@ -43,24 +87,22 @@ contract DAOFactory is IDAOFactory {
         // Initial supply goes to the DAO creator; the factory is only the
         // temporary Ownable owner so it can hand off minting rights to
         // Governance once Governance exists.
-        GovernanceToken token = new GovernanceToken(
-            name,
-            symbol,
-            initialSupply,
-            maxSupply,
-            msg.sender,
+        GovernanceToken token = GovernanceToken(governanceTokenImplementation.clone());
+        token.initialize(name, symbol, initialSupply, maxSupply, msg.sender, address(this));
+
+        StakedGovernanceToken stakedToken = StakedGovernanceToken(stakedGovernanceTokenImplementation.clone());
+        stakedToken.initialize(
+            address(token),
+            string.concat("Staked ", name),
+            string.concat("s", symbol),
             address(this)
         );
 
-        StakedGovernanceToken stakedToken = new StakedGovernanceToken(
-            address(token),
-            string.concat("Staked ", name),
-            string.concat("s", symbol)
-        );
+        Treasury treasury = Treasury(payable(treasuryImplementation.clone()));
+        treasury.initialize(address(this));
 
-        Treasury treasury = new Treasury(address(this));
-
-        Governance gov = new Governance(
+        Governance gov = Governance(governanceImplementation.clone());
+        gov.initialize(
             name,
             msg.sender,
             address(stakedToken),

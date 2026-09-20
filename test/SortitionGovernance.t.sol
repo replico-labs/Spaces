@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {SortitionGovernance} from "../src/governance/sortition/SortitionGovernance.sol";
 import {IRandomnessSource} from "../src/randomness/IRandomnessSource.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock randomness source - lets these tests control exactly
 ///      what "random" value gets returned, so the draw logic itself can be
@@ -79,7 +80,8 @@ contract SortitionGovernanceTest is Test {
     function setUp() public {
         token = new MockBalanceToken();
         randomness = new MockRandomnessSource();
-        gov = new SortitionGovernance(
+        gov = SortitionGovernance(Clones.clone(address(new SortitionGovernance())));
+        gov.initialize(
             "Test DAO", creator, address(token), treasury, address(randomness), defaultConfig(), initialCouncil()
         );
     }
@@ -94,8 +96,9 @@ contract SortitionGovernanceTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroRandomnessSource() public {
+        SortitionGovernance freshGov = SortitionGovernance(Clones.clone(address(new SortitionGovernance())));
         vm.expectRevert(SortitionGovernance.ZeroAddress.selector);
-        new SortitionGovernance(
+        freshGov.initialize(
             "Test", creator, address(token), treasury, address(0), defaultConfig(), initialCouncil()
         );
     }

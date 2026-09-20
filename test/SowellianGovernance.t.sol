@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {SowellianGovernance} from "../src/governance/sowellian/SowellianGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - voting power reads plus
 ///      real transfer/transferFrom semantics, since this contract moves
@@ -103,7 +104,8 @@ contract SowellianGovernanceTest is Test {
     function setUp() public {
         token = new MockVotesToken();
         oracle = new MockOracle();
-        gov = new SowellianGovernance("Test DAO", creator, address(token), treasury, defaultConfig());
+        gov = SowellianGovernance(Clones.clone(address(new SowellianGovernance())));
+        gov.initialize("Test DAO", creator, address(token), treasury, defaultConfig());
 
         token.setBalance(proposer, 1_000 ether);
         token.setBalance(resolver, 1_000 ether);

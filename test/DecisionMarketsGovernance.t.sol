@@ -7,6 +7,7 @@ import {ConditionalVault} from "../src/governance/futarchy/ConditionalVault.sol"
 import {ConditionalToken} from "../src/governance/futarchy/ConditionalToken.sol";
 import {DecisionMarketPair} from "../src/governance/futarchy/DecisionMarketPair.sol";
 import {WMON} from "../src/governance/futarchy/WMON.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract MockGovernanceToken {
     string public name = "Gov";
@@ -68,7 +69,8 @@ contract DecisionMarketsGovernanceTest is Test {
         ConditionalVault vaultImpl = new ConditionalVault();
         DecisionMarketPair pairImpl = new DecisionMarketPair();
 
-        gov = new DecisionMarketsGovernance(
+        gov = DecisionMarketsGovernance(payable(Clones.clone(address(new DecisionMarketsGovernance()))));
+        gov.initialize(
             "Test DAO",
             creator,
             address(govToken),
@@ -207,6 +209,17 @@ contract DecisionMarketsGovernanceTest is Test {
         uint256 id = _propose(1_000 ether, 10 ether);
         vm.expectRevert(DecisionMarketsGovernance.TradingWindowStillOpen.selector);
         gov.finalizeProposal(id);
+    }
+
+    /// @dev The deadline check is the very first thing trade() does, before
+    ///      any token transfer or pool interaction - so this needs no
+    ///      approvals or conditional-token setup to reach the revert.
+    function test_Trade_RevertsAfterTradingDeadline() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+
+        vm.expectRevert(DecisionMarketsGovernance.TradingWindowClosed.selector);
+        gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 5 ether, 0);
     }
 
     function test_FinalizeProposal_RevertsOnDoubleFinalize() public {

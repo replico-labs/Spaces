@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Treasury} from "../src/treasury/Treasury.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal ERC20 mock used only to test Treasury's ERC20 handling
 ///      without pulling in the full GovernanceToken/ERC20Votes stack.
@@ -46,7 +47,8 @@ contract TreasuryTest is Test {
     address internal recipient = makeAddr("recipient");
 
     function setUp() public {
-        treasury = new Treasury(governance);
+        treasury = Treasury(payable(Clones.clone(address(new Treasury()))));
+        treasury.initialize(governance);
         mockToken = new MockERC20();
         callTarget = new CallTarget();
 
@@ -59,8 +61,9 @@ contract TreasuryTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Constructor_RevertsOnZeroGovernance() public {
+        Treasury freshTreasury = Treasury(payable(Clones.clone(address(new Treasury()))));
         vm.expectRevert(ITreasury.ZeroAddress.selector);
-        new Treasury(address(0));
+        freshTreasury.initialize(address(0));
     }
 
     function test_Constructor_SetsGovernance() public view {

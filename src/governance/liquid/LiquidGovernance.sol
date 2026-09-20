@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @dev Minimal interface into a DAO's StakedGovernanceToken.
 interface IVotesToken {
     function getPastVotes(address account, uint256 timepoint) external view returns (uint256);
@@ -54,7 +56,7 @@ interface IVotesToken {
 ///      infinite loop - the hard MAX_CHAIN_DEPTH cap bounds every walk
 ///      regardless, it just means resolution fails to find a voter and
 ///      reverts.
-contract LiquidGovernance {
+contract LiquidGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -220,13 +222,21 @@ contract LiquidGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         LiquidGovernanceConfig memory config_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @dev Minimal interface into a DAO's StakedGovernanceToken - only the
 ///      current balance is needed here (see the design note below on why
 ///      this model has no fixed snapshot block).
@@ -75,7 +77,7 @@ interface ILockableToken {
 ///      Drops into the same trusted-`governance` slot on Treasury as every
 ///      other implementation here, and reuses the DAO's existing
 ///      StakedGovernanceToken.
-contract ConvictionGovernance {
+contract ConvictionGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -192,13 +194,21 @@ contract ConvictionGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         ConvictionGovernanceConfig memory config_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

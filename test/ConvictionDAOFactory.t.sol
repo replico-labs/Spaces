@@ -34,7 +34,17 @@ contract ConvictionDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new ConvictionDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        ConvictionGovernance convictionGovernanceImplementation = new ConvictionGovernance();
+
+        factory = new ConvictionDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(convictionGovernanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =

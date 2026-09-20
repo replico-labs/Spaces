@@ -55,7 +55,17 @@ abstract contract GovernanceTestBase is Test {
     }
 
     function deployDAO(GovernanceConfig memory config) internal {
-        factory = new DAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        Governance governanceImplementation = new Governance();
+
+        factory = new DAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(governanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr = factory.createDAO(

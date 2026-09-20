@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {GovernanceTestBase} from "./GovernanceTestBase.sol";
 import {Governance} from "../src/governance/Governance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "../src/governance/Types.sol";
 import "../src/governance/GovernanceErrors.sol";
 import "../src/governance/GovernanceEvents.sol";
@@ -504,25 +505,29 @@ contract GovernanceTest is GovernanceTestBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_Constructor_RevertsOnZeroCreator() public {
+        Governance freshGov = Governance(Clones.clone(address(new Governance())));
         vm.expectRevert(ZeroAddress.selector);
-        new Governance("DAO", address(0), address(token), address(treasury), defaultConfig());
+        freshGov.initialize("DAO", address(0), address(token), address(treasury), defaultConfig());
     }
 
     function test_Constructor_RevertsOnZeroToken() public {
+        Governance freshGov = Governance(Clones.clone(address(new Governance())));
         vm.expectRevert(ZeroAddress.selector);
-        new Governance("DAO", creator, address(0), address(treasury), defaultConfig());
+        freshGov.initialize("DAO", creator, address(0), address(treasury), defaultConfig());
     }
 
     function test_Constructor_RevertsOnZeroTreasury() public {
+        Governance freshGov = Governance(Clones.clone(address(new Governance())));
         vm.expectRevert(ZeroAddress.selector);
-        new Governance("DAO", creator, address(token), address(0), defaultConfig());
+        freshGov.initialize("DAO", creator, address(token), address(0), defaultConfig());
     }
 
     function test_Constructor_RevertsOnInvalidConfig() public {
         GovernanceConfig memory badConfig = defaultConfig();
         badConfig.votingPeriod = 0;
 
+        Governance freshGov = Governance(Clones.clone(address(new Governance())));
         vm.expectRevert(InvalidVotingPeriod.selector);
-        new Governance("DAO", creator, address(token), address(treasury), badConfig);
+        freshGov.initialize("DAO", creator, address(token), address(treasury), badConfig);
     }
 }

@@ -8,6 +8,8 @@ interface IVotesToken {
     function balanceOf(address account) external view returns (uint256);
 }
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @title QuadraticGovernance
 /// @author Marvin Sunday
 /// @notice A quadratic-weighted governance model: voting power on a
@@ -33,7 +35,7 @@ interface IVotesToken {
 ///      other implementation in this system, and reuses the DAO's
 ///      existing StakedGovernanceToken - switching from token-weighted to
 ///      quadratic governance requires no new token.
-contract QuadraticGovernance {
+contract QuadraticGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -164,13 +166,24 @@ contract QuadraticGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Clone-compatible conversion, same pattern as Governance.sol -
+    ///      no immutables here (confirmed from source), so this is a
+    ///      direct, faithful port of the original constructor.
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         QuadraticGovernanceConfig memory config_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

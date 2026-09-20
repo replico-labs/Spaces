@@ -56,7 +56,17 @@ contract SortitionDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new SortitionDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        SortitionGovernance sortitionGovernanceImplementation = new SortitionGovernance();
+
+        factory = new SortitionDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(sortitionGovernanceImplementation)
+        );
         randomnessSource = new MockRandomnessSource();
 
         initialCouncil.push(council1);

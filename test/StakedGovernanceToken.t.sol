@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {GovernanceToken} from "../src/token/GovernanceToken.sol";
 import {StakedGovernanceToken} from "../src/token/StakedGovernanceToken.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract StakedGovernanceTokenTest is Test {
     GovernanceToken internal underlying;
@@ -18,10 +19,11 @@ contract StakedGovernanceTokenTest is Test {
     uint256 internal constant MAX_SUPPLY = 10_000 ether;
 
     function setUp() public {
-        underlying = new GovernanceToken(
-            "Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, recipient, owner
-        );
-        staked = new StakedGovernanceToken(address(underlying), "Staked Test Token", "sTT");
+        underlying = GovernanceToken(Clones.clone(address(new GovernanceToken())));
+        underlying.initialize("Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, recipient, owner);
+
+        staked = StakedGovernanceToken(Clones.clone(address(new StakedGovernanceToken())));
+        staked.initialize(address(underlying), "Staked Test Token", "sTT", address(this));
 
         vm.prank(recipient);
         underlying.transfer(alice, 500 ether);
@@ -36,8 +38,9 @@ contract StakedGovernanceTokenTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroUnderlying() public {
+        StakedGovernanceToken freshStaked = StakedGovernanceToken(Clones.clone(address(new StakedGovernanceToken())));
         vm.expectRevert(StakedGovernanceToken.ZeroUnderlying.selector);
-        new StakedGovernanceToken(address(0), "Staked Test Token", "sTT");
+        freshStaked.initialize(address(0), "Staked Test Token", "sTT", address(this));
     }
 
     /*//////////////////////////////////////////////////////////////

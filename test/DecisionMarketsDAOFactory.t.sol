@@ -8,6 +8,9 @@ import {Treasury} from "../src/treasury/Treasury.sol";
 import {GovernanceToken} from "../src/token/GovernanceToken.sol";
 import {StakedGovernanceToken} from "../src/token/StakedGovernanceToken.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
+import {ConditionalToken} from "../src/governance/futarchy/ConditionalToken.sol";
+import {ConditionalVault} from "../src/governance/futarchy/ConditionalVault.sol";
+import {DecisionMarketPair} from "../src/governance/futarchy/DecisionMarketPair.sol";
 
 contract DecisionMarketsDAOFactoryTest is Test {
     DecisionMarketsDAOFactory internal factory;
@@ -33,7 +36,25 @@ contract DecisionMarketsDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new DecisionMarketsDAOFactory(wmon);
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        DecisionMarketsGovernance decisionMarketsGovernanceImplementation = new DecisionMarketsGovernance();
+
+        ConditionalToken conditionalTokenImplementation = new ConditionalToken();
+        ConditionalVault conditionalVaultImplementation = new ConditionalVault();
+        DecisionMarketPair decisionMarketPairImplementation = new DecisionMarketPair();
+
+        factory = new DecisionMarketsDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(decisionMarketsGovernanceImplementation),
+            wmon,
+            address(conditionalTokenImplementation),
+            address(conditionalVaultImplementation),
+            address(decisionMarketPairImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =
@@ -58,8 +79,25 @@ contract DecisionMarketsDAOFactoryTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroWmon() public {
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        DecisionMarketsGovernance decisionMarketsGovernanceImplementation = new DecisionMarketsGovernance();
+        ConditionalToken conditionalTokenImplementation = new ConditionalToken();
+        ConditionalVault conditionalVaultImplementation = new ConditionalVault();
+        DecisionMarketPair decisionMarketPairImplementation = new DecisionMarketPair();
+
         vm.expectRevert(DecisionMarketsDAOFactory.ZeroAddress.selector);
-        new DecisionMarketsDAOFactory(address(0));
+        new DecisionMarketsDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(decisionMarketsGovernanceImplementation),
+            address(0), // wmon - the one being tested
+            address(conditionalTokenImplementation),
+            address(conditionalVaultImplementation),
+            address(decisionMarketPairImplementation)
+        );
     }
 
     function test_CreateDAO_WiresGovernanceAsTreasuryController() public view {

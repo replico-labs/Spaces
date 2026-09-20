@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { ConditionalVault } from "./ConditionalVault.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { ConditionalToken } from "./ConditionalToken.sol";
 import { DecisionMarketPair } from "./DecisionMarketPair.sol";
 import { WMON } from "./WMON.sol";
@@ -41,7 +42,7 @@ interface IERC20Orchestrator {
 ///      proposer. A future governance action (or feature) could recover
 ///      or redistribute them; v1 deliberately doesn't decide that
 ///      question, same as SowellianGovernance's rounding-dust note.
-contract DecisionMarketsGovernance {
+contract DecisionMarketsGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -180,7 +181,15 @@ contract DecisionMarketsGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
@@ -190,7 +199,7 @@ contract DecisionMarketsGovernance {
         address conditionalVaultImplementation_,
         address decisionMarketPairImplementation_,
         DecisionMarketsConfig memory config_
-    ) {
+    ) external initializer {
         if (
             creator_ == address(0) ||
             governanceToken_ == address(0) ||

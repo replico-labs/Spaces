@@ -13,6 +13,7 @@ import "./GovernanceErrors.sol";
 import "./GovernanceEvents.sol";
 
 import "../interfaces/IGovernanceToken.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// @title Governance
 /// @author Marvin Sunday
@@ -24,7 +25,7 @@ import "../interfaces/IGovernanceToken.sol";
 ///      Governance is only responsible for wiring these modules together and
 ///      enforcing access control around proposal creation, voting, queueing,
 ///      and execution.
-contract Governance is GovernanceStorage {
+contract Governance is Initializable, GovernanceStorage {
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -38,16 +39,30 @@ contract Governance is GovernanceStorage {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /// @dev Locks initializers on the implementation contract itself -
+    ///      standard OpenZeppelin upgradeable-contracts practice, so
+    ///      nobody can call initialize() directly on the implementation
+    ///      (only on clones, which get their own independent storage).
+    ///      Clone-compatible conversion: this is the reference pattern
+    ///      for the other nine governance models - GovernanceStorage's
+    ///      fields are all regular storage already (confirmed from
+    ///      source, no immutables here), so this is a direct, faithful
+    ///      port of the original constructor's own logic and validation,
+    ///      nothing more.
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         GovernanceConfig memory config_
-    ) {
+    ) external initializer {
         if (
             creator_ == address(0) ||
             governanceToken_ == address(0) ||

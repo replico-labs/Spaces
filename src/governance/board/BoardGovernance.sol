@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @title BoardGovernance
 /// @author Marvin Sunday
 /// @notice A board/multisig governance model: a fixed set of designated
@@ -16,7 +18,7 @@ pragma solidity ^0.8.24;
 ///      capital-based. A DAO can start with this model (a small trusted
 ///      founding team) and later switch to a token-weighted or delegate
 ///      model without its Treasury ever moving.
-contract BoardGovernance {
+contract BoardGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -133,13 +135,21 @@ contract BoardGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address treasury_,
         BoardGovernanceConfig memory config_,
         address[] memory initialSigners_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
         if (initialSigners_.length == 0) revert InvalidConfiguration();
         _validateConfig(config_, initialSigners_.length);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @dev Minimal interface into a DAO's StakedGovernanceToken - covers
 ///      voting-power reads and standard ERC20 transfer methods, since this
 ///      contract uses the same token both for governance weight and as
@@ -95,7 +97,7 @@ interface IMetricOracle {
 ///        targeting governanceToken directly (transfer(treasury, dust))
 ///        can recover it at any time with no additional code needed.
 
-contract SowellianGovernance {
+contract SowellianGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -317,13 +319,21 @@ contract SowellianGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         SowellianConfig memory config_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

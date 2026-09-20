@@ -4,3 +4,4 @@
 @fhevm/solidity/=node_modules/@fhevm/solidity/
 encrypted-types/=node_modules/encrypted-types/
 forge-fhevm/=lib/forge-fhevm/src/
+@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/

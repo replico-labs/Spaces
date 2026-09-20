@@ -7,6 +7,7 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./DAOFactoryLib.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title SortitionDAOFactory
 /// @notice Deploys and wires together a governance token, staking
@@ -16,18 +17,43 @@ import "./DAOFactoryLib.sol";
 ///         requires a real, already-deployed randomness source (a
 ///         SwitchboardRandomnessAdapter, a ChainlinkRandomnessAdapter, or
 ///         any other IRandomnessSource implementation configured for
-///         this chain), which the caller must supply. This factory has
-///         no business deploying that itself - which provider to trust,
-///         and its real network-specific configuration (queue IDs,
-///         wrapper addresses), is a deliberate, per-deployment choice
-///         that belongs to whoever is creating the DAO, not something
-///         this factory should default or guess at.
+///         this chain), which the caller must supply per-DAO, at
+///         createDAO() time - not something this factory's own
+///         constructor should default or guess at.
+/// @dev Clone-based - see QuadraticDAOFactory's own notes for why.
+///      SortitionGovernance itself needs --via-ir to deploy (too large as
+///      a standalone implementation even after this conversion); this
+///      factory's own bytecode is unaffected and stays small regardless.
 contract SortitionDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable sortitionGovernanceImplementation;
+
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
 
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
+
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address sortitionGovernanceImplementation_
+    ) {
+        require(governanceTokenImplementation_ != address(0), "Zero implementation");
+        require(stakedGovernanceTokenImplementation_ != address(0), "Zero implementation");
+        require(treasuryImplementation_ != address(0), "Zero implementation");
+        require(sortitionGovernanceImplementation_ != address(0), "Zero implementation");
+
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        sortitionGovernanceImplementation = sortitionGovernanceImplementation_;
+    }
 
     function createDAO(
         string calldata name,
@@ -38,10 +64,19 @@ contract SortitionDAOFactory {
         SortitionGovernance.SortitionGovernanceConfig calldata config,
         address[] calldata initialCouncil
     ) external returns (address governance) {
-        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) =
-            DAOFactoryLib.deployCore(name, symbol, initialSupply, maxSupply, msg.sender);
+        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) = DAOFactoryLib.deployCore(
+            name,
+            symbol,
+            initialSupply,
+            maxSupply,
+            msg.sender,
+            governanceTokenImplementation,
+            stakedGovernanceTokenImplementation,
+            treasuryImplementation
+        );
 
-        SortitionGovernance gov = new SortitionGovernance(
+        SortitionGovernance gov = SortitionGovernance(sortitionGovernanceImplementation.clone());
+        gov.initialize(
             name,
             msg.sender,
             address(stakedToken),

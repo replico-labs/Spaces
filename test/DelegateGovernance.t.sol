@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {DelegateGovernance} from "../src/governance/delegate/DelegateGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - just enough surface for
 ///      DelegateGovernance's IVotesToken interface. Lets these tests run
@@ -74,7 +75,8 @@ contract DelegateGovernanceTest is Test {
 
     function setUp() public {
         token = new MockVotesToken();
-        gov = new DelegateGovernance(
+        gov = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
+        gov.initialize(
             "Test DAO", creator, address(token), treasury, defaultConfig(), initialCouncil()
         );
     }
@@ -101,21 +103,24 @@ contract DelegateGovernanceTest is Test {
         tooFew[0] = alice;
         tooFew[1] = bob;
 
+        DelegateGovernance freshGov1 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.InvalidConfiguration.selector);
-        new DelegateGovernance("Test DAO", creator, address(token), treasury, defaultConfig(), tooFew);
+        freshGov1.initialize("Test DAO", creator, address(token), treasury, defaultConfig(), tooFew);
     }
 
     function test_Constructor_RevertsOnZeroTreasury() public {
+        DelegateGovernance freshGov2 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.ZeroAddress.selector);
-        new DelegateGovernance("Test DAO", creator, address(token), address(0), defaultConfig(), initialCouncil());
+        freshGov2.initialize("Test DAO", creator, address(token), address(0), defaultConfig(), initialCouncil());
     }
 
     function test_Constructor_RevertsOnInvalidQuorumAboveCouncilSize() public {
         DelegateGovernance.DelegateGovernanceConfig memory badConfig = defaultConfig();
         badConfig.councilQuorum = 5; // exceeds councilSize of 3
 
+        DelegateGovernance freshGov3 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.InvalidConfiguration.selector);
-        new DelegateGovernance("Test DAO", creator, address(token), treasury, badConfig, initialCouncil());
+        freshGov3.initialize("Test DAO", creator, address(token), treasury, badConfig, initialCouncil());
     }
 
     /*//////////////////////////////////////////////////////////////

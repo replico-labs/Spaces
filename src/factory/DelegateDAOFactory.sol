@@ -7,6 +7,7 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./DAOFactoryLib.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title DelegateDAOFactory
 /// @notice Deploys and wires together a governance token, staking wrapper,
@@ -14,12 +15,41 @@ import "./DAOFactoryLib.sol";
 ///         same deployment shape as the original DAOFactory, with the
 ///         addition of the initial elected council DelegateGovernance
 ///         requires at construction.
+/// @dev Clone-based - see QuadraticDAOFactory's own notes for why.
+///      DelegateGovernance itself needs --via-ir to deploy (too large as
+///      a standalone implementation even after this conversion - see its
+///      own file for details); this factory's own bytecode is unaffected
+///      by that and stays small regardless.
 contract DelegateDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable delegateGovernanceImplementation;
+
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
 
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
+
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address delegateGovernanceImplementation_
+    ) {
+        require(governanceTokenImplementation_ != address(0), "Zero implementation");
+        require(stakedGovernanceTokenImplementation_ != address(0), "Zero implementation");
+        require(treasuryImplementation_ != address(0), "Zero implementation");
+        require(delegateGovernanceImplementation_ != address(0), "Zero implementation");
+
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        delegateGovernanceImplementation = delegateGovernanceImplementation_;
+    }
 
     function createDAO(
         string calldata name,
@@ -29,10 +59,19 @@ contract DelegateDAOFactory {
         DelegateGovernance.DelegateGovernanceConfig calldata config,
         address[] calldata initialCouncil
     ) external returns (address governance) {
-        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) =
-            DAOFactoryLib.deployCore(name, symbol, initialSupply, maxSupply, msg.sender);
+        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) = DAOFactoryLib.deployCore(
+            name,
+            symbol,
+            initialSupply,
+            maxSupply,
+            msg.sender,
+            governanceTokenImplementation,
+            stakedGovernanceTokenImplementation,
+            treasuryImplementation
+        );
 
-        DelegateGovernance gov = new DelegateGovernance(
+        DelegateGovernance gov = DelegateGovernance(delegateGovernanceImplementation.clone());
+        gov.initialize(
             name,
             msg.sender,
             address(stakedToken),

@@ -36,7 +36,17 @@ contract OptimisticDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new OptimisticDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        OptimisticGovernance optimisticGovernanceImplementation = new OptimisticGovernance();
+
+        factory = new OptimisticDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(optimisticGovernanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =

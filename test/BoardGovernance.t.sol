@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {BoardGovernance} from "../src/governance/board/BoardGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract BoardGovernanceTest is Test {
     BoardGovernance internal gov;
@@ -31,7 +32,8 @@ contract BoardGovernanceTest is Test {
     }
 
     function setUp() public {
-        gov = new BoardGovernance(
+        gov = BoardGovernance(Clones.clone(address(new BoardGovernance())));
+        gov.initialize(
             "Test Board DAO", creator, treasury, defaultConfig(), initialSigners()
         );
     }
@@ -56,13 +58,15 @@ contract BoardGovernanceTest is Test {
 
     function test_Constructor_RevertsOnZeroSigners() public {
         address[] memory none = new address[](0);
+        BoardGovernance freshGov1 = BoardGovernance(Clones.clone(address(new BoardGovernance())));
         vm.expectRevert(BoardGovernance.InvalidConfiguration.selector);
-        new BoardGovernance("Test", creator, treasury, defaultConfig(), none);
+        freshGov1.initialize("Test", creator, treasury, defaultConfig(), none);
     }
 
     function test_Constructor_RevertsOnZeroTreasury() public {
+        BoardGovernance freshGov2 = BoardGovernance(Clones.clone(address(new BoardGovernance())));
         vm.expectRevert(BoardGovernance.ZeroAddress.selector);
-        new BoardGovernance("Test", creator, address(0), defaultConfig(), initialSigners());
+        freshGov2.initialize("Test", creator, address(0), defaultConfig(), initialSigners());
     }
 
     function test_Constructor_RevertsOnDuplicateSigner() public {
@@ -70,16 +74,18 @@ contract BoardGovernanceTest is Test {
         dupes[0] = alice;
         dupes[1] = alice;
 
+        BoardGovernance freshGov3 = BoardGovernance(Clones.clone(address(new BoardGovernance())));
         vm.expectRevert(BoardGovernance.AlreadySigner.selector);
-        new BoardGovernance("Test", creator, treasury, defaultConfig(), dupes);
+        freshGov3.initialize("Test", creator, treasury, defaultConfig(), dupes);
     }
 
     function test_Constructor_RevertsOnThresholdExceedingSignerCount() public {
         BoardGovernance.BoardGovernanceConfig memory badConfig = defaultConfig();
         badConfig.requiredApprovals = 5;
 
+        BoardGovernance freshGov4 = BoardGovernance(Clones.clone(address(new BoardGovernance())));
         vm.expectRevert(BoardGovernance.InvalidConfiguration.selector);
-        new BoardGovernance("Test", creator, treasury, badConfig, initialSigners());
+        freshGov4.initialize("Test", creator, treasury, badConfig, initialSigners());
     }
 
     /*//////////////////////////////////////////////////////////////

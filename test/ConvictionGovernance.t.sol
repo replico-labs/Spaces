@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {ConvictionGovernance} from "../src/governance/conviction/ConvictionGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - only balanceOf is needed
 ///      by this governance model (see the contract's design note on why
@@ -66,7 +67,8 @@ contract ConvictionGovernanceTest is Test {
 
     function setUp() public {
         token = new MockBalanceToken();
-        gov = new ConvictionGovernance("Test DAO", creator, address(token), treasury, defaultConfig());
+        gov = ConvictionGovernance(Clones.clone(address(new ConvictionGovernance())));
+        gov.initialize("Test DAO", creator, address(token), treasury, defaultConfig());
     }
 
     function _actionWithValue(uint256 value) internal view returns (ConvictionGovernance.ProposalAction[] memory actions) {
@@ -82,8 +84,9 @@ contract ConvictionGovernanceTest is Test {
         ConvictionGovernance.ConvictionGovernanceConfig memory badConfig = defaultConfig();
         badConfig.convictionGrowthRate = 0;
 
+        ConvictionGovernance freshGov = ConvictionGovernance(Clones.clone(address(new ConvictionGovernance())));
         vm.expectRevert(ConvictionGovernance.InvalidConfiguration.selector);
-        new ConvictionGovernance("Test", creator, address(token), treasury, badConfig);
+        freshGov.initialize("Test", creator, address(token), treasury, badConfig);
     }
 
     /*//////////////////////////////////////////////////////////////

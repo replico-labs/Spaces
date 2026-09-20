@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {QuadraticGovernance} from "../src/governance/quadratic/QuadraticGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - just enough surface for
 ///      QuadraticGovernance's IVotesToken interface.
@@ -56,7 +57,8 @@ contract QuadraticGovernanceTest is Test {
 
     function setUp() public {
         token = new MockVotesToken();
-        gov = new QuadraticGovernance("Test DAO", creator, address(token), treasury, defaultConfig());
+        gov = QuadraticGovernance(Clones.clone(address(new QuadraticGovernance())));
+        gov.initialize("Test DAO", creator, address(token), treasury, defaultConfig());
     }
 
     function _singleAction() internal view returns (QuadraticGovernance.ProposalAction[] memory actions) {

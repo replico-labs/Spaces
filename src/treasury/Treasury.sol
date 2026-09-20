@@ -2,9 +2,19 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./../interfaces/ITreasury.sol";
 
-contract Treasury is ITreasury {
+/// @dev Clone-compatible version - converted from constructor-based
+///      initialization to initialize(), same reasoning as
+///      GovernanceToken.sol/StakedGovernanceToken.sol: every factory in
+///      this system was embedding this contract's full creation bytecode
+///      via `new Treasury(...)`, a major contributor to every factory
+///      exceeding Ethereum's 24,576-byte contract size limit. No
+///      immutable-to-storage concern here - `governance` was always
+///      regular storage, not immutable, so this conversion is otherwise
+///      a direct, faithful port of the original constructor's logic.
+contract Treasury is Initializable, ITreasury {
     address public override governance;
 
     modifier onlyGovernance() {
@@ -12,7 +22,15 @@ contract Treasury is ITreasury {
         _;
     }
 
-    constructor(address governance_) {
+    /// @dev Locks initializers on the implementation contract itself -
+    ///      standard OpenZeppelin upgradeable-contracts practice, so
+    ///      nobody can call initialize() directly on the implementation
+    ///      (only on clones, which get their own independent storage).
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address governance_) external initializer {
         if (governance_ == address(0)) revert ZeroAddress();
         governance = governance_;
     }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title StakedGovernanceToken
 /// @author Marvin Sunday
@@ -25,17 +25,48 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 ///      GovernanceToken with zero changes to Governance.sol itself. See
 ///      Governance.setGovernanceToken for how an existing DAO migrates to
 ///      this staking model without touching its Treasury.
-contract StakedGovernanceToken is ERC20Permit, ERC20Votes, ReentrancyGuard {
+///
+///      Clone-compatible version - converted from constructor-based
+///      initialization to initialize(), same reasoning and same
+///      immutable-to-storage gotcha as GovernanceToken.sol: `underlying`
+///      was `immutable` in the original, which would silently break on a
+///      clone (immutables live in the implementation's own bytecode, a
+///      clone never runs that constructor). Moved to regular storage.
+///      `owner` is now an explicit `initialOwner_` parameter rather than
+///      implicit `msg.sender`, matching GovernanceToken.sol's own
+///      initialize() convention - more robust than depending on exactly
+///      who happens to call initialize() on a fresh clone.
+///
+///      Reentrancy guard is hand-written below rather than inherited from
+///      OpenZeppelin's ReentrancyGuardUpgradeable - the installed version
+///      of openzeppelin-contracts-upgradeable (5.6.1) genuinely doesn't
+///      ship that contract at all (confirmed by searching the actual
+///      installed library, not assumed). A minimal, explicitly-initialized
+///      guard is safer here than relying on the non-upgradeable version's
+///      default (uninitialized-for-a-clone) storage value happening to
+///      behave correctly by numeric coincidence.
+contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20VotesUpgradeable {
     using SafeERC20 for IERC20;
 
-    /// @notice The underlying governance token being staked.
-    IERC20 public immutable underlying;
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _reentrancyStatus;
+
+    modifier nonReentrant() {
+        require(_reentrancyStatus != _ENTERED, "ReentrancyGuard: reentrant call");
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
+
+    /// @notice The underlying governance token being staked. Regular
+    ///         storage, not immutable - see the clone-compatibility note
+    ///         above for why.
+    IERC20 public underlying;
 
     /// @notice Admin address - can transfer itself and designate which
     ///         single governance contract (if any) is allowed to lock
-    ///         balances. Defaults to the deployer; not tied to any
-    ///         constructor param change, so this stays fully compatible
-    ///         with DAOFactory's existing deployment call.
+    ///         balances.
     address public owner;
 
     /// @notice The one governance contract currently authorized to call
@@ -87,17 +118,33 @@ contract StakedGovernanceToken is ERC20Permit, ERC20Votes, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /// @dev Locks initializers on the implementation contract itself -
+    ///      standard OpenZeppelin upgradeable-contracts practice, so
+    ///      nobody can call initialize() directly on the implementation
+    ///      (only on clones, which get their own independent storage).
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address underlying_,
         string memory name_,
-        string memory symbol_
-    ) ERC20(name_, symbol_) ERC20Permit(name_) {
+        string memory symbol_,
+        address initialOwner_
+    ) external initializer {
         if (underlying_ == address(0)) revert ZeroUnderlying();
+        if (initialOwner_ == address(0)) revert ZeroAddress();
+
+        __ERC20_init(name_, symbol_);
+        __ERC20Permit_init(name_);
+        __ERC20Votes_init();
+        _reentrancyStatus = _NOT_ENTERED;
+
         underlying = IERC20(underlying_);
-        owner = msg.sender;
+        owner = initialOwner_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -192,7 +239,7 @@ contract StakedGovernanceToken is ERC20Permit, ERC20Votes, ReentrancyGuard {
     ///      amount. Minting (from == address(0)) is never restricted.
     function _update(address from, address to, uint256 value)
         internal
-        override(ERC20, ERC20Votes)
+        override(ERC20Upgradeable, ERC20VotesUpgradeable)
     {
         if (from != address(0)) {
             uint256 available = balanceOf(from) - lockedBalance[from];
@@ -204,7 +251,7 @@ contract StakedGovernanceToken is ERC20Permit, ERC20Votes, ReentrancyGuard {
     function nonces(address account)
         public
         view
-        override(ERC20Permit, Nonces)
+        override(ERC20PermitUpgradeable, NoncesUpgradeable)
         returns (uint256)
     {
         return super.nonces(account);

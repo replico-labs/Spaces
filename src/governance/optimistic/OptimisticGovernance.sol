@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @dev Minimal interface into a DAO's StakedGovernanceToken - covers both
 ///      voting power reads (for the fallback vote) and standard ERC20
 ///      transfer methods (for handling challenge bonds in the same token).
@@ -34,7 +36,7 @@ interface IVotesToken {
 ///      the challenge correctly caught a bad proposal and the bond is
 ///      returned to the challenger. Only one challenge is allowed per
 ///      proposal - the first challenger locks in the dispute.
-contract OptimisticGovernance {
+contract OptimisticGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -181,13 +183,21 @@ contract OptimisticGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         OptimisticGovernanceConfig memory config_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

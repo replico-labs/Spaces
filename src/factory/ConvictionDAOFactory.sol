@@ -7,6 +7,7 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./DAOFactoryLib.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title ConvictionDAOFactory
 /// @notice Deploys and wires together a governance token, staking
@@ -23,12 +24,37 @@ import "./DAOFactoryLib.sol";
 ///         own behavior), so it is the only address able to make this
 ///         call at all - this must happen now, in the same transaction,
 ///         or not through this factory again.
+/// @dev Clone-based - see QuadraticDAOFactory's own notes for why.
 contract ConvictionDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable convictionGovernanceImplementation;
+
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
 
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
+
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address convictionGovernanceImplementation_
+    ) {
+        require(governanceTokenImplementation_ != address(0), "Zero implementation");
+        require(stakedGovernanceTokenImplementation_ != address(0), "Zero implementation");
+        require(treasuryImplementation_ != address(0), "Zero implementation");
+        require(convictionGovernanceImplementation_ != address(0), "Zero implementation");
+
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        convictionGovernanceImplementation = convictionGovernanceImplementation_;
+    }
 
     function createDAO(
         string calldata name,
@@ -37,10 +63,19 @@ contract ConvictionDAOFactory {
         uint256 maxSupply,
         ConvictionGovernance.ConvictionGovernanceConfig calldata config
     ) external returns (address governance) {
-        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) =
-            DAOFactoryLib.deployCore(name, symbol, initialSupply, maxSupply, msg.sender);
+        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) = DAOFactoryLib.deployCore(
+            name,
+            symbol,
+            initialSupply,
+            maxSupply,
+            msg.sender,
+            governanceTokenImplementation,
+            stakedGovernanceTokenImplementation,
+            treasuryImplementation
+        );
 
-        ConvictionGovernance gov = new ConvictionGovernance(name, msg.sender, address(stakedToken), address(treasury), config);
+        ConvictionGovernance gov = ConvictionGovernance(convictionGovernanceImplementation.clone());
+        gov.initialize(name, msg.sender, address(stakedToken), address(treasury), config);
         governance = address(gov);
 
         treasury.transferGovernance(governance);

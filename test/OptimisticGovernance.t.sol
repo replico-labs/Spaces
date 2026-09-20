@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {OptimisticGovernance} from "../src/governance/optimistic/OptimisticGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - covers voting-power reads
 ///      and standard ERC20 transfer methods (for bond handling).
@@ -74,7 +75,8 @@ contract OptimisticGovernanceTest is Test {
 
     function setUp() public {
         token = new MockVotesToken();
-        gov = new OptimisticGovernance("Test DAO", creator, address(token), treasury, defaultConfig());
+        gov = OptimisticGovernance(Clones.clone(address(new OptimisticGovernance())));
+        gov.initialize("Test DAO", creator, address(token), treasury, defaultConfig());
     }
 
     function _singleAction() internal view returns (OptimisticGovernance.ProposalAction[] memory actions) {

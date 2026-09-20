@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {GovernanceToken} from "../src/token/GovernanceToken.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract GovernanceTokenTest is Test {
     GovernanceToken internal token;
@@ -17,7 +18,8 @@ contract GovernanceTokenTest is Test {
     uint256 internal constant MAX_SUPPLY = 10_000 ether;
 
     function setUp() public {
-        token = new GovernanceToken(
+        token = GovernanceToken(Clones.clone(address(new GovernanceToken())));
+        token.initialize(
             "Test Token",
             "TT",
             INITIAL_SUPPLY,
@@ -45,23 +47,26 @@ contract GovernanceTokenTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroRecipient() public {
+        GovernanceToken freshToken = GovernanceToken(Clones.clone(address(new GovernanceToken())));
         vm.expectRevert(bytes("Zero recipient"));
-        new GovernanceToken("Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, address(0), owner);
+        freshToken.initialize("Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, address(0), owner);
     }
 
     function test_Constructor_RevertsOnZeroOwner() public {
-        // Ownable(initialOwner_) is a base constructor and runs before our
-        // own require() in the derived constructor body, so it's Ownable's
-        // own error that actually surfaces here.
+        // Ownable(initialOwner_) is a base initializer and runs before our
+        // own require() in initialize()'s body, so it's Ownable's own
+        // error that actually surfaces here.
+        GovernanceToken freshToken = GovernanceToken(Clones.clone(address(new GovernanceToken())));
         vm.expectRevert(
             abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0))
         );
-        new GovernanceToken("Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, recipient, address(0));
+        freshToken.initialize("Test Token", "TT", INITIAL_SUPPLY, MAX_SUPPLY, recipient, address(0));
     }
 
     function test_Constructor_RevertsWhenInitialSupplyExceedsMax() public {
+        GovernanceToken freshToken = GovernanceToken(Clones.clone(address(new GovernanceToken())));
         vm.expectRevert(bytes("Invalid supply"));
-        new GovernanceToken("Test Token", "TT", MAX_SUPPLY + 1, MAX_SUPPLY, recipient, owner);
+        freshToken.initialize("Test Token", "TT", MAX_SUPPLY + 1, MAX_SUPPLY, recipient, owner);
     }
 
     /*//////////////////////////////////////////////////////////////

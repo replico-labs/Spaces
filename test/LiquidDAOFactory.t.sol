@@ -35,7 +35,17 @@ contract LiquidDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new LiquidDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        LiquidGovernance liquidGovernanceImplementation = new LiquidGovernance();
+
+        factory = new LiquidDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(liquidGovernanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =

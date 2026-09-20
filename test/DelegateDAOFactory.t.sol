@@ -47,7 +47,17 @@ contract DelegateDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new DelegateDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        DelegateGovernance delegateGovernanceImplementation = new DelegateGovernance();
+
+        factory = new DelegateDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(delegateGovernanceImplementation)
+        );
 
         initialCouncil.push(council1);
         initialCouncil.push(council2);

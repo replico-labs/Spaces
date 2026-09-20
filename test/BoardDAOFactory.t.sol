@@ -29,7 +29,13 @@ contract BoardDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new BoardDAOFactory();
+        Treasury treasuryImplementation = new Treasury();
+        BoardGovernance boardGovernanceImplementation = new BoardGovernance();
+
+        factory = new BoardDAOFactory(
+            address(treasuryImplementation),
+            address(boardGovernanceImplementation)
+        );
 
         initialSigners.push(signer1);
         initialSigners.push(signer2);

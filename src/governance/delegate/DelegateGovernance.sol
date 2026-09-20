@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @dev Minimal interface into a DAO's StakedGovernanceToken - only what's
 ///      needed here, so this contract has zero external dependencies (no
 ///      OpenZeppelin import required).
@@ -32,7 +34,7 @@ interface IVotesToken {
 ///      - Recall is supported. A removed delegate's seat sits vacant until
 ///        the next scheduled election - no special election is triggered.
 ///      - No term limits. A delegate may run again indefinitely.
-contract DelegateGovernance {
+contract DelegateGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -234,14 +236,22 @@ contract DelegateGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
         address treasury_,
         DelegateGovernanceConfig memory config_,
         address[] memory initialCouncil_
-    ) {
+    ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
         }

@@ -10,20 +10,37 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./DAOFactoryLib.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title DecisionMarketsDAOFactory
 /// @notice Deploys and wires together a governance token, staking
 ///         wrapper, treasury, and DecisionMarketsGovernance contract for
-///         a new DAO. Unlike every other factory here, this one has its
-///         own constructor: ConditionalToken, ConditionalVault, and
-///         DecisionMarketPair are stateless clone implementations - safe
-///         and sensible to deploy exactly once and share across every
-///         DAO this factory ever creates, rather than redeploying three
-///         fresh implementations (wastefully) for each one. WMON is
-///         supplied the same way, since it is meant to be one canonical
-///         shared deployment across the whole chain, not something each
-///         DAO gets its own copy of.
+///         a new DAO. ConditionalToken, ConditionalVault, and
+///         DecisionMarketPair are stateless clone implementations, shared
+///         across every DAO this factory ever creates. WMON is supplied
+///         the same way, since it is meant to be one canonical shared
+///         deployment across the whole chain, not something each DAO
+///         gets its own copy of.
+/// @dev Clone-based, all 8 implementations included - this factory
+///      previously deployed ConditionalToken/ConditionalVault/
+///      DecisionMarketPair from inside its OWN constructor, which does
+///      NOT solve the bytecode-embedding problem (a child's creation
+///      bytecode is embedded in the caller's bytecode regardless of
+///      which function contains the `new` call - constructor included).
+///      This was the worst offender of all ten factories in this system
+///      for exactly that reason. All 8 implementations - the 4 standard
+///      ones plus wmon, conditionalToken, conditionalVault, and
+///      decisionMarketPair - must now be deployed once, separately,
+///      before this factory, with their addresses passed in as
+///      constructor arguments.
 contract DecisionMarketsDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable decisionMarketsGovernanceImplementation;
+
     address public immutable wmon;
     address public immutable conditionalTokenImplementation;
     address public immutable conditionalVaultImplementation;
@@ -37,13 +54,36 @@ contract DecisionMarketsDAOFactory {
 
     error ZeroAddress();
 
-    constructor(address wmon_) {
-        if (wmon_ == address(0)) revert ZeroAddress();
-        wmon = wmon_;
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address decisionMarketsGovernanceImplementation_,
+        address wmon_,
+        address conditionalTokenImplementation_,
+        address conditionalVaultImplementation_,
+        address decisionMarketPairImplementation_
+    ) {
+        if (
+            governanceTokenImplementation_ == address(0) ||
+            stakedGovernanceTokenImplementation_ == address(0) ||
+            treasuryImplementation_ == address(0) ||
+            decisionMarketsGovernanceImplementation_ == address(0) ||
+            wmon_ == address(0) ||
+            conditionalTokenImplementation_ == address(0) ||
+            conditionalVaultImplementation_ == address(0) ||
+            decisionMarketPairImplementation_ == address(0)
+        ) revert ZeroAddress();
 
-        conditionalTokenImplementation = address(new ConditionalToken());
-        conditionalVaultImplementation = address(new ConditionalVault());
-        decisionMarketPairImplementation = address(new DecisionMarketPair());
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        decisionMarketsGovernanceImplementation = decisionMarketsGovernanceImplementation_;
+
+        wmon = wmon_;
+        conditionalTokenImplementation = conditionalTokenImplementation_;
+        conditionalVaultImplementation = conditionalVaultImplementation_;
+        decisionMarketPairImplementation = decisionMarketPairImplementation_;
     }
 
     function createDAO(
@@ -53,10 +93,19 @@ contract DecisionMarketsDAOFactory {
         uint256 maxSupply,
         DecisionMarketsGovernance.DecisionMarketsConfig calldata config
     ) external returns (address governance) {
-        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) =
-            DAOFactoryLib.deployCore(name, symbol, initialSupply, maxSupply, msg.sender);
+        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) = DAOFactoryLib.deployCore(
+            name,
+            symbol,
+            initialSupply,
+            maxSupply,
+            msg.sender,
+            governanceTokenImplementation,
+            stakedGovernanceTokenImplementation,
+            treasuryImplementation
+        );
 
-        DecisionMarketsGovernance gov = new DecisionMarketsGovernance(
+        DecisionMarketsGovernance gov = DecisionMarketsGovernance(payable(decisionMarketsGovernanceImplementation.clone()));
+        gov.initialize(
             name,
             msg.sender,
             address(stakedToken),

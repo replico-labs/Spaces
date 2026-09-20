@@ -22,7 +22,7 @@ import {OpportunityMarketFactory} from "../src/governance/opportunity-market/Opp
 ///
 /// Usage:
 ///   forge script script/DeployOpportunityMarketFactory.s.sol:DeployOpportunityMarketFactory \
-///     --rpc-url <SEPOLIA_RPC_URL> \
+///     --rpc-url https://rpc.sepolia.org \
 ///     --private-key $PRIVATE_KEY \
 ///     --broadcast \
 ///     --verify

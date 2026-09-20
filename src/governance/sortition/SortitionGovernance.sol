@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IRandomnessSource } from "../../randomness/IRandomnessSource.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// @dev Minimal interface into a DAO's StakedGovernanceToken.
 interface IBalanceToken {
@@ -40,7 +41,7 @@ interface IBalanceToken {
 ///      short terms are the intended check on a bad-actor seat here,
 ///      the same way jury duty relies on a short term rather than a
 ///      recall process.
-contract SortitionGovernance {
+contract SortitionGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
     //////////////////////////////////////////////////////////////*/
@@ -203,7 +204,15 @@ contract SortitionGovernance {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory daoName_,
         address creator_,
         address governanceToken_,
@@ -211,7 +220,7 @@ contract SortitionGovernance {
         address randomnessSource_,
         SortitionGovernanceConfig memory config_,
         address[] memory initialCouncil_
-    ) {
+    ) external initializer {
         if (
             creator_ == address(0) ||
             governanceToken_ == address(0) ||

@@ -6,6 +6,7 @@ import {Governance} from "../src/governance/Governance.sol";
 import {GovernanceToken} from "../src/token/GovernanceToken.sol";
 import {Treasury} from "../src/treasury/Treasury.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "../src/governance/Types.sol";
 import "../src/governance/GovernanceErrors.sol";
 
@@ -193,7 +194,8 @@ contract IntegrationTest is GovernanceTestBase {
     function test_SetTreasury_ThroughGovernanceProposal() public {
         // Deploy a fresh treasury that already trusts this Governance
         // contract (mirrors the factory's own handoff pattern).
-        Treasury newTreasury = new Treasury(address(gov));
+        Treasury newTreasury = Treasury(payable(Clones.clone(address(new Treasury()))));
+        newTreasury.initialize(address(gov));
 
         bytes memory data = abi.encodeWithSelector(
             Governance.setTreasury.selector,

@@ -42,7 +42,17 @@ contract SowellianDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new SowellianDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        SowellianGovernance sowellianGovernanceImplementation = new SowellianGovernance();
+
+        factory = new SowellianDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(sowellianGovernanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =

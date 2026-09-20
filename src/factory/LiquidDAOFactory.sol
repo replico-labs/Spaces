@@ -7,17 +7,43 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./DAOFactoryLib.sol";
+import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title LiquidDAOFactory
 /// @notice Deploys and wires together a governance token, staking
 ///         wrapper, treasury, and LiquidGovernance contract for a new
 ///         DAO - the same deployment shape as the original DAOFactory.
+/// @dev Clone-based - see QuadraticDAOFactory's own notes for why.
 contract LiquidDAOFactory {
+    using Clones for address;
+
+    address public immutable governanceTokenImplementation;
+    address public immutable stakedGovernanceTokenImplementation;
+    address public immutable treasuryImplementation;
+    address public immutable liquidGovernanceImplementation;
+
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
 
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
+
+    constructor(
+        address governanceTokenImplementation_,
+        address stakedGovernanceTokenImplementation_,
+        address treasuryImplementation_,
+        address liquidGovernanceImplementation_
+    ) {
+        require(governanceTokenImplementation_ != address(0), "Zero implementation");
+        require(stakedGovernanceTokenImplementation_ != address(0), "Zero implementation");
+        require(treasuryImplementation_ != address(0), "Zero implementation");
+        require(liquidGovernanceImplementation_ != address(0), "Zero implementation");
+
+        governanceTokenImplementation = governanceTokenImplementation_;
+        stakedGovernanceTokenImplementation = stakedGovernanceTokenImplementation_;
+        treasuryImplementation = treasuryImplementation_;
+        liquidGovernanceImplementation = liquidGovernanceImplementation_;
+    }
 
     function createDAO(
         string calldata name,
@@ -26,10 +52,19 @@ contract LiquidDAOFactory {
         uint256 maxSupply,
         LiquidGovernance.LiquidGovernanceConfig calldata config
     ) external returns (address governance) {
-        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) =
-            DAOFactoryLib.deployCore(name, symbol, initialSupply, maxSupply, msg.sender);
+        (GovernanceToken token, StakedGovernanceToken stakedToken, Treasury treasury) = DAOFactoryLib.deployCore(
+            name,
+            symbol,
+            initialSupply,
+            maxSupply,
+            msg.sender,
+            governanceTokenImplementation,
+            stakedGovernanceTokenImplementation,
+            treasuryImplementation
+        );
 
-        LiquidGovernance gov = new LiquidGovernance(name, msg.sender, address(stakedToken), address(treasury), config);
+        LiquidGovernance gov = LiquidGovernance(liquidGovernanceImplementation.clone());
+        gov.initialize(name, msg.sender, address(stakedToken), address(treasury), config);
         governance = address(gov);
 
         treasury.transferGovernance(governance);

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {LiquidGovernance} from "../src/governance/liquid/LiquidGovernance.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken.
 contract MockVotesToken {
@@ -52,7 +53,8 @@ contract LiquidGovernanceTest is Test {
 
     function setUp() public {
         token = new MockVotesToken();
-        gov = new LiquidGovernance("Test DAO", creator, address(token), treasury, defaultConfig());
+        gov = LiquidGovernance(Clones.clone(address(new LiquidGovernance())));
+        gov.initialize("Test DAO", creator, address(token), treasury, defaultConfig());
     }
 
     function _singleAction() internal view returns (LiquidGovernance.ProposalAction[] memory actions) {

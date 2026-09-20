@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {GovernanceToken} from "../src/token/GovernanceToken.sol";
 import {WelcomeDistributor} from "../src/distribution/WelcomeDistributor.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract WelcomeDistributorTest is Test {
     GovernanceToken internal token;
@@ -21,7 +22,8 @@ contract WelcomeDistributorTest is Test {
     uint256 internal constant INITIAL_SUPPLY = 10_000 ether;
 
     function setUp() public {
-        token = new GovernanceToken(
+        token = GovernanceToken(Clones.clone(address(new GovernanceToken())));
+        token.initialize(
             "Test Token", "TT", INITIAL_SUPPLY, INITIAL_SUPPLY, recipient, owner
         );
         distributor = new WelcomeDistributor(

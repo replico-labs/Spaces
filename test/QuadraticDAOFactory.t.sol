@@ -35,7 +35,17 @@ contract QuadraticDAOFactoryTest is Test {
     }
 
     function setUp() public {
-        factory = new QuadraticDAOFactory();
+        GovernanceToken governanceTokenImplementation = new GovernanceToken();
+        StakedGovernanceToken stakedGovernanceTokenImplementation = new StakedGovernanceToken();
+        Treasury treasuryImplementation = new Treasury();
+        QuadraticGovernance quadraticGovernanceImplementation = new QuadraticGovernance();
+
+        factory = new QuadraticDAOFactory(
+            address(governanceTokenImplementation),
+            address(stakedGovernanceTokenImplementation),
+            address(treasuryImplementation),
+            address(quadraticGovernanceImplementation)
+        );
 
         vm.prank(creator);
         address governanceAddr =
