@@ -31,8 +31,21 @@ interface IVotesToken {
 ///      (Chainlink's AggregatorV3Interface, Switchboard's ISwitchboard)
 ///      already return one, specifically so a consuming contract can
 ///      reject stale data rather than trust a frozen or broken feed.
+///
+///      `selector` lets ONE deployed adapter serve many different feeds,
+///      rather than requiring a fresh adapter deployment per metric -
+///      genuinely meaningful for Switchboard, whose real contract is
+///      already one proxy address serving many feedIds; a
+///      SwitchboardPriceFeedAdapter interprets `selector` as that
+///      feedId directly. Chainlink has no equivalent concept - each
+///      price pair is already its own separately-deployed contract on
+///      Chainlink's own side, with or without anything built here - so
+///      ChainlinkPriceFeedAdapter simply ignores this parameter, still
+///      bound to one specific feed via its own constructor. Both
+///      satisfy this same interface; only the provider where "one
+///      proxy, many feeds" is real gets to take advantage of it.
 interface IMetricOracle {
-    function latestValue() external view returns (int256 value, uint256 updatedAt);
+    function latestValue(bytes32 selector) external view returns (int256 value, uint256 updatedAt);
 }
 
 /// @title SowellianGovernance
@@ -152,6 +165,7 @@ contract SowellianGovernance is Initializable {
         // Success criteria - fixed once approval passes.
         ResolutionMethod resolutionMethod;
         address oracle; // used only if resolutionMethod == Oracle
+        bytes32 oracleSelector; // which feed on `oracle` - meaningful for Switchboard-backed adapters, ignored by Chainlink-backed ones
         int256 targetValue;
         bool targetIsMinimum; // true: success if metric >= targetValue; false: success if metric <= targetValue
         uint256 measurementPeriod; // seconds, counted from execution
@@ -355,6 +369,7 @@ contract SowellianGovernance is Initializable {
         string calldata metadataURI,
         ResolutionMethod resolutionMethod,
         address oracle,
+        bytes32 oracleSelector,
         int256 targetValue,
         bool targetIsMinimum,
         uint256 measurementPeriod
@@ -376,6 +391,7 @@ contract SowellianGovernance is Initializable {
 
         p.resolutionMethod = resolutionMethod;
         p.oracle = oracle;
+        p.oracleSelector = oracleSelector;
         p.targetValue = targetValue;
         p.targetIsMinimum = targetIsMinimum;
         p.measurementPeriod = measurementPeriod;
@@ -524,7 +540,7 @@ contract SowellianGovernance is Initializable {
         if (p.resolutionMethod != ResolutionMethod.Oracle) revert NotOracleTrack();
         if (block.timestamp < p.measurementDeadline) revert MeasurementPeriodNotEnded();
 
-        (int256 observed, uint256 updatedAt) = IMetricOracle(p.oracle).latestValue();
+        (int256 observed, uint256 updatedAt) = IMetricOracle(p.oracle).latestValue(p.oracleSelector);
         if (block.timestamp > updatedAt + _config.maxOracleStaleness) revert StaleOracleData();
 
         bool success = p.targetIsMinimum ? observed >= p.targetValue : observed <= p.targetValue;

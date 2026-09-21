@@ -7,7 +7,7 @@ import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/inte
 ///      not imported directly to avoid a cross-folder dependency, same
 ///      pattern already used for the randomness adapters.
 interface IMetricOracle {
-    function latestValue() external view returns (int256 value, uint256 updatedAt);
+    function latestValue(bytes32 selector) external view returns (int256 value, uint256 updatedAt);
 }
 
 /// @title ChainlinkPriceFeedAdapter
@@ -24,6 +24,14 @@ interface IMetricOracle {
 ///      on a given chain - verify a feed actually exists for what you
 ///      need before pointing a proposal at one.
 ///
+///      `latestValue`'s `selector` parameter is deliberately ignored
+///      here - Chainlink has no equivalent to Switchboard's one-proxy-
+///      many-feeds shape. Each Chainlink price pair is already its own
+///      separately-deployed contract on Chainlink's own side, so this
+///      adapter stays bound to exactly one feed via its constructor,
+///      same as before; the parameter exists only to satisfy the same
+///      interface SwitchboardPriceFeedAdapter actually uses it for.
+///
 ///      Verified against the real, installed Chainlink contracts package
 ///      (chainlink/contracts, v1.4.0) - not written from documentation
 ///      snippets alone.
@@ -38,7 +46,7 @@ contract ChainlinkPriceFeedAdapter is IMetricOracle {
     }
 
     /// @inheritdoc IMetricOracle
-    function latestValue() external view returns (int256 value, uint256 updatedAt) {
+    function latestValue(bytes32 /* selector, unused - see contract-level note */) external view returns (int256 value, uint256 updatedAt) {
         (, int256 answer, , uint256 lastUpdatedAt, ) = priceFeed.latestRoundData();
         return (answer, lastUpdatedAt);
     }

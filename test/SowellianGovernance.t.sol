@@ -62,7 +62,7 @@ contract MockOracle {
         _updatedAt = updatedAt;
     }
 
-    function latestValue() external view returns (int256 value, uint256 updatedAt) {
+    function latestValue(bytes32) external view returns (int256 value, uint256 updatedAt) {
         return (_value, _updatedAt);
     }
 }
@@ -134,6 +134,7 @@ contract SowellianGovernanceTest is Test {
             "ipfs://p1",
             SowellianGovernance.ResolutionMethod.Oracle,
             address(oracle),
+            bytes32(0), // oracleSelector - MockOracle ignores this entirely
             100, // targetValue
             true, // targetIsMinimum
             30 days // measurementPeriod
@@ -299,6 +300,7 @@ contract SowellianGovernanceTest is Test {
             "ipfs://p1",
             SowellianGovernance.ResolutionMethod.Human,
             address(0),
+            bytes32(0), // oracleSelector - irrelevant for human track
             0,
             true,
             30 days
@@ -429,6 +431,7 @@ contract SowellianGovernanceTest is Test {
             "ipfs://p1",
             SowellianGovernance.ResolutionMethod.Oracle,
             address(badOracle),
+            bytes32(0), // oracleSelector - ReentrantOracle ignores it
             100,
             true,
             30 days
@@ -464,7 +467,7 @@ contract ReentrantOracle {
         targetProposal = id;
     }
 
-    function latestValue() external returns (int256, uint256) {
+    function latestValue(bytes32) external returns (int256, uint256) {
         // This call must revert (Reentrant) without unwinding the outer
         // call - a plain external call from a non-test contract, so a
         // revert here just returns false-ish/propagates depending on call
