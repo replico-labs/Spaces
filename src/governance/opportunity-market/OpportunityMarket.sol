@@ -255,30 +255,35 @@ contract OpportunityMarket {
         return (b.target, b.amount);
     }
 
+    /// @notice Returns every bet, from every wallet, in a single call -
+    ///         paired arrays: bettor[i] placed bet targets[i]/amounts[i].
+    ///         Lets the deployer's tooling gather every handle in one
+    ///         round trip, then submit them all together as one batched
+    ///         decrypt request, instead of one getBet() call per bet.
     function getAllBets()
         external
         view
         returns (address[] memory bettor, euint32[] memory targets, euint64[] memory amounts)
-        {
+    {
         uint256 total;
         uint256 m = allBettors.length;
         for (uint256 j = 0; j < m; j++) {
-          total += betCount[allBettors[j]];
+            total += betCount[allBettors[j]];
         }
 
-       bettor = new address[](total);
-       targets = new euint32[](total);
-       amounts = new euint64[](total);
+        bettor = new address[](total);
+        targets = new euint32[](total);
+        amounts = new euint64[](total);
 
-       uint256 cursor;
-       for (uint256 j = 0; j < m; j++) {
-         address account = allBettors[j];
-         uint256 n = betCount[account];
-          for (uint256 i = 0; i < n; i++) {
-             bettor[cursor] = account;
-             targets[cursor] = _bets[account][i].target;
-             amounts[cursor] = _bets[account][i].amount;
-             cursor++;
+        uint256 cursor;
+        for (uint256 j = 0; j < m; j++) {
+            address account = allBettors[j];
+            uint256 n = betCount[account];
+            for (uint256 i = 0; i < n; i++) {
+                bettor[cursor] = account;
+                targets[cursor] = _bets[account][i].target;
+                amounts[cursor] = _bets[account][i].amount;
+                cursor++;
             }
         }
     }
@@ -351,6 +356,7 @@ contract OpportunityMarket {
         FHE.allowThis(newBalance);
         FHE.allow(newBalance, msg.sender);
         FHE.allowThis(target);
+        FHE.allow(target, msg.sender);
         FHE.allowThis(actualAmount);
         FHE.allow(actualAmount, msg.sender);
         // Deployer-only visibility for statistics - granted alongside,

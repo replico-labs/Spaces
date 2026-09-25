@@ -333,28 +333,53 @@ contract OpportunityMarketTest is FhevmTest {
     }
 
     function test_GetBet_OnlyDeployerAndBackerCanDecrypt() public {
-        _deposit(alice, 500);
-        vm.prank(alice);
+        // A local backer with a known private key, scoped to this test -
+        // the shared `alice` state variable is created via makeAddr(),
+        // which never exposes a private key, so she can't sign a
+        // userDecrypt request. Using a separate local account here
+        // avoids changing alice's address for every other test in this
+        // file that depends on it.
+        (address backer, uint256 backerPk) = makeAddrAndKey("backer");
+        token.mint(backer, 1_000);
+        _deposit(backer, 500);
+
+        vm.prank(backer);
         market.listOpportunity("ipfs://opp1");
 
-        (externalEuint32 targetHandle, bytes memory targetProof) = encryptUint32(1, alice, address(market));
-        (externalEuint64 amountHandle, bytes memory amountProof) = encryptUint64(200, alice, address(market));
-        vm.prank(alice);
+        (externalEuint32 targetHandle, bytes memory targetProof) = encryptUint32(1, backer, address(market));
+        (externalEuint64 amountHandle, bytes memory amountProof) = encryptUint64(200, backer, address(market));
+        vm.prank(backer);
         market.back(targetHandle, targetProof, amountHandle, amountProof);
 
-        (, euint64 amount) = market.getBet(alice, 0);
+        (euint32 target, euint64 amount) = market.getBet(backer, 0);
 
-        // The deployer was granted decrypt rights in back() - this
-        // should succeed and return the real, correct amount.
+        // The fix under test: FHE.allow(target, msg.sender) in back() -
+        // the backer must be able to decrypt BOTH which opportunity
+        // they bet on AND how much, not just the amount. Missing the
+        // target grant specifically is the exact bug this test would
+        // have caught, had it checked target at all before this fix.
+        bytes memory backerSig = signUserDecrypt(backerPk, address(market));
+        uint256 backerTargetView = this._userDecryptExternal(euint32.unwrap(target), backer, address(market), backerSig);
+        uint256 backerAmountView = this._userDecryptExternal(euint64.unwrap(amount), backer, address(market), backerSig);
+        assertEq(backerTargetView, 1);
+        assertEq(backerAmountView, 200);
+
+        // The deployer was also granted decrypt rights in back() - both
+        // target and amount should succeed for them too.
         bytes memory deployerSig = signUserDecrypt(deployerPk, address(market));
-        uint256 deployerView = this._userDecryptExternal(euint64.unwrap(amount), deployer, address(market), deployerSig);
-        assertEq(deployerView, 200);
+        uint256 deployerTargetView = this._userDecryptExternal(euint32.unwrap(target), deployer, address(market), deployerSig);
+        uint256 deployerAmountView = this._userDecryptExternal(euint64.unwrap(amount), deployer, address(market), deployerSig);
+        assertEq(deployerTargetView, 1);
+        assertEq(deployerAmountView, 200);
 
         // A random, uninvolved address was never granted decrypt rights
-        // on this specific bet - this should revert, proving the
-        // permission boundary is real and not just decorative.
+        // on this specific bet - this should revert for BOTH handles,
+        // proving the permission boundary is real and not just
+        // decorative for one of the two encrypted values.
         (address stranger, uint256 strangerPk) = makeAddrAndKey("stranger");
         bytes memory strangerSig = signUserDecrypt(strangerPk, address(market));
+        vm.expectRevert();
+        this._userDecryptExternal(euint32.unwrap(target), stranger, address(market), strangerSig);
         vm.expectRevert();
         this._userDecryptExternal(euint64.unwrap(amount), stranger, address(market), strangerSig);
     }
