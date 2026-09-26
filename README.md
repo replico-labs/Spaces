@@ -204,8 +204,8 @@ External dependencies on Monad testnet (third-party, verified against official d
 
 | Contract | Address |
 |---|---|
-| OpportunityMarketFactory | `0xc6d9D3e0be0Bdf4Df84dF90B948C9D2949452dB5` |
-| OpportunityMarket implementation | `0x72648d7954877Dadd9B38D71EE3C70e245D29B3a` |
+| OpportunityMarketFactory | `0xF1e01Bb2929Ec1Cb0994a26b74526Af19161e37` |
+| OpportunityMarket implementation | `0xFA81efE09b799D8bF3110D5849DAe343F2DE054E` |
 
 ### Hyperliquid (HyperEVM) — not yet deployed
 

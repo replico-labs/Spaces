@@ -394,9 +394,11 @@ contract OpportunityMarket {
         stakeReclaimed[msg.sender] = true;
 
         euint64 total = _hasBalance[msg.sender] ? _confidentialBalance[msg.sender] : FHE.asEuint64(0);
+        FHE.allowThis(total);
         uint256 n = betCount[msg.sender];
         for (uint256 i = 0; i < n; i++) {
             total = FHE.add(total, _bets[msg.sender][i].amount);
+            FHE.allowThis(total);
         }
 
         FHE.allowThis(total);
@@ -413,14 +415,19 @@ contract OpportunityMarket {
 
     function _qualifyingStake(address account) internal returns (euint64) {
         euint32 winningTarget = FHE.asEuint32(uint32(winningOpportunityId));
+        FHE.allowThis(winningTarget);
         euint64 qualifyingTotal = FHE.asEuint64(0);
+        FHE.allowThis(qualifyingTotal);
 
         uint256 n = betCount[account];
         for (uint256 i = 0; i < n; i++) {
             Bet storage b = _bets[account][i];
             ebool matches = FHE.eq(b.target, winningTarget);
+            FHE.allowThis(matches);
             euint64 contribution = FHE.select(matches, b.amount, FHE.asEuint64(0));
+            FHE.allowThis(contribution);
             qualifyingTotal = FHE.add(qualifyingTotal, contribution);
+            FHE.allowThis(qualifyingTotal);
         }
         return qualifyingTotal;
     }
@@ -430,9 +437,11 @@ contract OpportunityMarket {
         if (winningTotalFinalized) revert WinningTotalAlreadyFinalized();
 
         euint64 grandTotal = FHE.asEuint64(0);
+        FHE.allowThis(grandTotal);
         uint256 m = allBettors.length;
         for (uint256 j = 0; j < m; j++) {
             grandTotal = FHE.add(grandTotal, _qualifyingStake(allBettors[j]));
+            FHE.allowThis(grandTotal);
         }
 
         FHE.makePubliclyDecryptable(grandTotal);
@@ -461,7 +470,10 @@ contract OpportunityMarket {
         rewardComputed[msg.sender] = true;
 
         euint64 qualifying = _qualifyingStake(msg.sender);
-        euint64 numerator = FHE.mul(qualifying, FHE.asEuint64(uint64(rewardPool)));
+        euint64 rewardPoolEncrypted = FHE.asEuint64(uint64(rewardPool));
+        FHE.allowThis(rewardPoolEncrypted);
+        euint64 numerator = FHE.mul(qualifying, rewardPoolEncrypted);
+        FHE.allowThis(numerator);
         euint64 reward = winningTotalBacking == 0 ? FHE.asEuint64(0) : FHE.div(numerator, uint64(winningTotalBacking));
 
         FHE.allowThis(reward);
