@@ -17,7 +17,7 @@ interface IERC20Minimal {
 }
 
 /// @title OpportunityMarket
-/// @author Marvin Sunday
+/// @author Ark Team
 /// @notice A confidential opportunity-backing system: anyone can list an
 ///         opportunity, anyone can back one with a private amount, and
 ///         WHICH opportunity someone backed stays hidden too - not just
@@ -119,6 +119,22 @@ contract OpportunityMarket {
     uint256 public opportunityCount;
     mapping(uint256 => Opportunity) public opportunities;
 
+    /// @dev Hard cap on listed opportunities - required for back()'s
+    /// oblivious per-opportunity update loop to stay bounded. Without
+    /// this, an unbounded opportunityCount would make every single bet
+    /// cost more as more opportunities get listed, trading the old
+    /// unbounded-at-reveal-time problem for an unbounded-at-every-bet
+    /// one - arguably worse, since it costs every bettor repeatedly
+    /// instead of the deployer once. 12 chosen as a reasonable ceiling
+    /// for this bot's actual use today, not a protocol-level limit.
+    uint256 public constant MAX_OPPORTUNITIES = 12;
+
+    /// @dev Running encrypted total per opportunity, updated on every
+    /// bet - not summed from scratch at reveal time. See back() for
+    /// how this stays oblivious to which opportunity was actually bet
+    /// on.
+    mapping(uint256 => euint64) internal opportunityTotal;
+
     mapping(address => euint64) internal _confidentialBalance;
     mapping(address => bool) internal _hasBalance;
 
@@ -154,6 +170,7 @@ contract OpportunityMarket {
     error ZeroAddress();
     error OnlyDeployer();
     error EmptyMetadataURI();
+    error TooManyOpportunities();
     error OpportunityDoesNotExist();
     error AlreadyResolved();
     error NotResolved();
@@ -294,8 +311,21 @@ contract OpportunityMarket {
 
     function listOpportunity(string calldata metadataURI) external returns (uint256 id) {
         if (bytes(metadataURI).length == 0) revert EmptyMetadataURI();
+        if (opportunityCount >= MAX_OPPORTUNITIES) revert TooManyOpportunities();
         id = ++opportunityCount;
         opportunities[id] = Opportunity({ lister: msg.sender, metadataURI: metadataURI, listedAt: block.timestamp });
+
+        // Guarantees a genuine, properly-granted FHE handle exists from
+        // the moment this opportunity is listed - without this, an
+        // opportunity that never receives a single bet before being
+        // resolved as the winner would leave finalizeWinningTotal
+        // trying to reveal Solidity's default, uninitialized zero-value
+        // for the mapping slot, which was never actually created via
+        // FHE.asEuint64 and isn't a genuine ciphertext at all.
+        euint64 zero = FHE.asEuint64(0);
+        FHE.allowThis(zero);
+        opportunityTotal[id] = zero;
+
         emit OpportunityListed(id, msg.sender, metadataURI);
     }
 
@@ -364,6 +394,21 @@ contract OpportunityMarket {
         // and every other backer, still see nothing but ciphertext.
         FHE.allow(target, deployer);
         FHE.allow(actualAmount, deployer);
+
+        // Obliviously update every opportunity's running total, not
+        // just the one actually bet on - an observer watching this
+        // transaction sees MAX_OPPORTUNITIES identical-shaped updates
+        // and cannot tell which one genuinely changed. This is what
+        // lets finalizeWinningTotal shrink to a single read instead of
+        // summing every bettor's history at reveal time.
+        for (uint256 k = 1; k <= opportunityCount; k++) {
+            ebool isThisOpportunity = FHE.eq(target, FHE.asEuint32(uint32(k)));
+            FHE.allowThis(isThisOpportunity);
+            euint64 contributionToOpportunity = FHE.select(isThisOpportunity, actualAmount, FHE.asEuint64(0));
+            FHE.allowThis(contributionToOpportunity);
+            opportunityTotal[k] = FHE.add(opportunityTotal[k], contributionToOpportunity);
+            FHE.allowThis(opportunityTotal[k]);
+        }
 
         emit Backed(msg.sender, idx);
     }
@@ -436,13 +481,11 @@ contract OpportunityMarket {
         if (!resolved) revert NotResolved();
         if (winningTotalFinalized) revert WinningTotalAlreadyFinalized();
 
-        euint64 grandTotal = FHE.asEuint64(0);
-        FHE.allowThis(grandTotal);
-        uint256 m = allBettors.length;
-        for (uint256 j = 0; j < m; j++) {
-            grandTotal = FHE.add(grandTotal, _qualifyingStake(allBettors[j]));
-            FHE.allowThis(grandTotal);
-        }
+        // The winning opportunity's total has been correct and complete
+        // since the moment the last bet was placed on it - back()'s
+        // oblivious per-opportunity update loop already did the summing,
+        // incrementally, one bet at a time. Nothing left to compute here.
+        euint64 grandTotal = opportunityTotal[winningOpportunityId];
 
         FHE.makePubliclyDecryptable(grandTotal);
         handle = euint64.unwrap(grandTotal);

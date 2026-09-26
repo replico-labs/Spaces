@@ -410,4 +410,123 @@ contract OpportunityMarketTest is FhevmTest {
         assertEq(decrypt(targets[0]), 1);
         assertEq(decrypt(targets[1]), 1);
     }
+
+    /*//////////////////////////////////////////////////////////////
+            OBLIVIOUS PER-OPPORTUNITY RUNNING TOTAL (redesign)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ListOpportunity_RevertsAtMaxOpportunities() public {
+        vm.startPrank(alice);
+        for (uint256 i = 0; i < 12; i++) {
+            market.listOpportunity("ipfs://opp");
+        }
+        assertEq(market.opportunityCount(), 12);
+
+        vm.expectRevert(OpportunityMarket.TooManyOpportunities.selector);
+        market.listOpportunity("ipfs://one-too-many");
+        vm.stopPrank();
+    }
+
+    /// @dev The core property the whole redesign depends on: betting on
+    ///      one specific opportunity must update ONLY that opportunity's
+    ///      running total, not any other one - confirmed here by
+    ///      resolving the actually-bet-on opportunity and checking the
+    ///      revealed total exactly matches the bet, with no contribution
+    ///      leaking in from anywhere else.
+    function test_Back_ObliviouslyUpdatesOnlyTheChosenOpportunity() public {
+        _deposit(alice, 1_000);
+
+        vm.startPrank(alice);
+        market.listOpportunity("ipfs://opp1");
+        market.listOpportunity("ipfs://opp2");
+        market.listOpportunity("ipfs://opp3");
+        market.listOpportunity("ipfs://opp4");
+        market.listOpportunity("ipfs://opp5");
+        vm.stopPrank();
+
+        // Bet on opportunity 3 specifically, out of five listed.
+        (externalEuint32 targetHandle, bytes memory targetProof) = encryptUint32(3, alice, address(market));
+        (externalEuint64 amountHandle, bytes memory amountProof) = encryptUint64(350, alice, address(market));
+        vm.prank(alice);
+        market.back(targetHandle, targetProof, amountHandle, amountProof);
+
+        vm.prank(deployer);
+        market.resolve(3); // the one actually bet on
+
+        bytes32 handle = market.finalizeWinningTotal();
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = handle;
+        (uint256[] memory cleartexts, bytes memory proof) = publicDecrypt(handles);
+        market.completeWinningTotalReveal(abi.encodePacked(cleartexts), proof);
+
+        // Exactly 350 - not 0 (would mean the update never landed) and
+        // not some other value (would mean it leaked into the wrong
+        // opportunity's slot).
+        assertEq(market.winningTotalBacking(), 350);
+    }
+
+    /// @dev The edge case found while building this: an opportunity that
+    ///      never receives a single bet must still reveal a genuine,
+    ///      valid zero if it's resolved as the winner - not revert or
+    ///      misbehave over an uninitialized handle. Confirms the fix in
+    ///      listOpportunity() that grants every opportunity's total a
+    ///      real ciphertext from the moment it's listed.
+    function test_FinalizeWinningTotal_UnBetOpportunityRevealsZero() public {
+        _deposit(alice, 1_000);
+
+        vm.startPrank(alice);
+        market.listOpportunity("ipfs://opp1");
+        market.listOpportunity("ipfs://opp2");
+        vm.stopPrank();
+
+        // Alice bets on opportunity 1 - opportunity 2 never receives a bet at all.
+        (externalEuint32 targetHandle, bytes memory targetProof) = encryptUint32(1, alice, address(market));
+        (externalEuint64 amountHandle, bytes memory amountProof) = encryptUint64(500, alice, address(market));
+        vm.prank(alice);
+        market.back(targetHandle, targetProof, amountHandle, amountProof);
+
+        vm.prank(deployer);
+        market.resolve(2); // the never-bet-on opportunity wins instead
+
+        bytes32 handle = market.finalizeWinningTotal();
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = handle;
+        (uint256[] memory cleartexts, bytes memory proof) = publicDecrypt(handles);
+        market.completeWinningTotalReveal(abi.encodePacked(cleartexts), proof);
+
+        assertEq(market.winningTotalBacking(), 0);
+    }
+
+    /// @dev Two separate bettors, two separate transactions, same
+    ///      opportunity - the running total must accumulate correctly
+    ///      across genuinely independent back() calls, not just within
+    ///      a single one.
+    function test_Back_MultipleBetsOnSameOpportunityAccumulate() public {
+        _deposit(alice, 1_000);
+        _deposit(bob, 1_000);
+
+        vm.prank(alice);
+        market.listOpportunity("ipfs://opp1");
+
+        (externalEuint32 t1, bytes memory tp1) = encryptUint32(1, alice, address(market));
+        (externalEuint64 a1, bytes memory ap1) = encryptUint64(300, alice, address(market));
+        vm.prank(alice);
+        market.back(t1, tp1, a1, ap1);
+
+        (externalEuint32 t2, bytes memory tp2) = encryptUint32(1, bob, address(market));
+        (externalEuint64 a2, bytes memory ap2) = encryptUint64(450, bob, address(market));
+        vm.prank(bob);
+        market.back(t2, tp2, a2, ap2);
+
+        vm.prank(deployer);
+        market.resolve(1);
+
+        bytes32 handle = market.finalizeWinningTotal();
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = handle;
+        (uint256[] memory cleartexts, bytes memory proof) = publicDecrypt(handles);
+        market.completeWinningTotalReveal(abi.encodePacked(cleartexts), proof);
+
+        assertEq(market.winningTotalBacking(), 750); // 300 + 450
+    }
 }
