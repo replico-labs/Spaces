@@ -116,7 +116,7 @@ contract SowellianDAOFactoryTest is Test {
         assertEq(underlyingToken, address(underlying));
         assertEq(governance, address(gov));
         assertEq(treasuryAddr, address(treasury));
-        assertEq(createdAt, block.timestamp);
+        assertEq(createdAt, vm.getBlockTimestamp());
     }
 
     function test_CreateDAO_TracksCreatorDAOs() public {

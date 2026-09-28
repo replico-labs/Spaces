@@ -146,11 +146,11 @@ contract SowellianGovernanceTest is Test {
         token.setPastVotes(voter, p.approvalSnapshotBlock, 500 ether);
         token.setPastTotalSupply(p.approvalSnapshotBlock, 1_000 ether);
 
-        vm.roll(block.number + defaultConfig().approvalVotingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().approvalVotingDelay);
         vm.prank(voter);
         gov.castApprovalVote(id, SowellianGovernance.VoteType.For);
 
-        vm.roll(block.number + defaultConfig().approvalVotingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().approvalVotingPeriod + 1);
         gov.finalizeApproval(id);
     }
 
@@ -166,7 +166,7 @@ contract SowellianGovernanceTest is Test {
         vm.prank(bob);
         gov.takePosition(id, SowellianGovernance.Side.No, 200 ether);
 
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         p = gov.getProposal(id);
@@ -202,7 +202,7 @@ contract SowellianGovernanceTest is Test {
         vm.prank(bob);
         gov.takePosition(id, SowellianGovernance.Side.No, 200 ether);
 
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
@@ -224,7 +224,7 @@ contract SowellianGovernanceTest is Test {
     function test_ResolveViaOracle_RevertsBeforeMeasurementDeadline() public {
         uint256 id = _proposeOracleTrack();
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         vm.expectRevert(SowellianGovernance.MeasurementPeriodNotEnded.selector);
@@ -234,7 +234,7 @@ contract SowellianGovernanceTest is Test {
     function test_ResolveViaOracle_RevertsOnStaleData() public {
         uint256 id = _proposeOracleTrack();
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
@@ -243,7 +243,7 @@ contract SowellianGovernanceTest is Test {
         // Value was last updated well outside the configured 1-day
         // staleness window - the feed is frozen or broken, and the
         // contract must refuse to trust it rather than silently proceed.
-        oracle.setValueAt(150, block.timestamp - 2 days);
+        oracle.setValueAt(150, vm.getBlockTimestamp() - 2 days);
 
         vm.expectRevert(SowellianGovernance.StaleOracleData.selector);
         gov.resolveViaOracle(id);
@@ -252,14 +252,14 @@ contract SowellianGovernanceTest is Test {
     function test_ResolveViaOracle_SucceedsWithFreshData() public {
         uint256 id = _proposeOracleTrack();
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
         vm.warp(p.measurementDeadline + 1);
 
         // Updated just inside the 1-day window.
-        oracle.setValueAt(150, block.timestamp - 1 hours);
+        oracle.setValueAt(150, vm.getBlockTimestamp() - 1 hours);
         gov.resolveViaOracle(id);
 
         p = gov.getProposal(id);
@@ -277,11 +277,11 @@ contract SowellianGovernanceTest is Test {
         token.setPastVotes(voter, p.approvalSnapshotBlock, 500 ether);
         token.setPastTotalSupply(p.approvalSnapshotBlock, 1_000 ether);
 
-        vm.roll(block.number + defaultConfig().approvalVotingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().approvalVotingDelay);
         vm.prank(voter);
         gov.castApprovalVote(id, SowellianGovernance.VoteType.Against);
 
-        vm.roll(block.number + defaultConfig().approvalVotingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().approvalVotingPeriod + 1);
         gov.finalizeApproval(id);
 
         p = gov.getProposal(id);
@@ -314,7 +314,7 @@ contract SowellianGovernanceTest is Test {
         vm.prank(alice);
         gov.takePosition(id, SowellianGovernance.Side.Yes, 100 ether);
 
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
@@ -343,7 +343,7 @@ contract SowellianGovernanceTest is Test {
     function test_HumanTrack_ChallengedAdjudicationUpholdsResolver() public {
         uint256 id = _proposeHumanTrack();
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
@@ -364,7 +364,7 @@ contract SowellianGovernanceTest is Test {
         vm.prank(voter);
         gov.castAdjudicationVote(id, SowellianGovernance.Outcome.Success);
 
-        vm.roll(block.number + defaultConfig().adjudicationVotingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().adjudicationVotingPeriod + 1);
 
         uint256 resolverBefore = token.balanceOf(resolver);
         uint256 treasuryBefore = token.balanceOf(treasury);
@@ -384,7 +384,7 @@ contract SowellianGovernanceTest is Test {
     function test_HumanTrack_ChallengedAdjudicationSidesWithChallenger() public {
         uint256 id = _proposeHumanTrack();
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);
@@ -403,7 +403,7 @@ contract SowellianGovernanceTest is Test {
         vm.prank(voter);
         gov.castAdjudicationVote(id, SowellianGovernance.Outcome.Failure); // adjudicators disagree with resolver
 
-        vm.roll(block.number + defaultConfig().adjudicationVotingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().adjudicationVotingPeriod + 1);
 
         uint256 challengerBefore = token.balanceOf(challenger);
         uint256 treasuryBefore = token.balanceOf(treasury);
@@ -437,7 +437,7 @@ contract SowellianGovernanceTest is Test {
             30 days
         );
         _approveProposal(id);
-        vm.warp(block.timestamp + defaultConfig().positionsWindow + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
         gov.executeProposal(id);
 
         SowellianGovernance.Proposal memory p = gov.getProposal(id);

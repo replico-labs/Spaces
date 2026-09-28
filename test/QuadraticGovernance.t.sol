@@ -118,7 +118,7 @@ contract QuadraticGovernanceTest is Test {
         _setSnapshotVotes(id, alice, 100 ether);
         _setSnapshotVotes(id, whale, 10_000 ether);
 
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         uint256 aliceWeight = gov.castVote(id, QuadraticGovernance.VoteType.For);
@@ -155,7 +155,7 @@ contract QuadraticGovernanceTest is Test {
         vm.prank(alice);
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");
         _setSnapshotVotes(id, alice, 100 ether);
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(id, QuadraticGovernance.VoteType.For);
@@ -177,11 +177,11 @@ contract QuadraticGovernanceTest is Test {
         // cancels out between numerator and denominator).
         token.setPastTotalSupply(p.snapshotBlock, 1_000_000 ether);
         
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
         vm.prank(alice);
         gov.castVote(id, QuadraticGovernance.VoteType.For);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         gov.queueProposal(id);
         
     }
@@ -189,7 +189,7 @@ contract QuadraticGovernanceTest is Test {
     function test_QueueProposal_RevertsWhenQuorumNotReached() public {
         vm.prank(alice);
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingPeriod + defaultConfig().votingDelay + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + defaultConfig().votingDelay + 1);
 
         vm.expectRevert(QuadraticGovernance.QuorumNotReached.selector);
         gov.queueProposal(id);
@@ -208,7 +208,7 @@ contract QuadraticGovernanceTest is Test {
 
     function test_ExecuteProposal_Succeeds() public {
         uint256 id = _proposeVoteQueue();
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         gov.executeProposal(id);
         assertEq(uint8(gov.state(id)), uint8(QuadraticGovernance.ProposalState.Executed));

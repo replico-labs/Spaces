@@ -202,7 +202,7 @@ contract DecisionMarketPairTest is Test {
         // simple to compute by hand and check exactly.
         _addLiquidity(alice, 100 ether, 100 ether);
 
-        uint256 startTimestamp = block.timestamp;
+        uint256 startTimestamp = vm.getBlockTimestamp();
         uint256 elapsed = 100;
         vm.warp(startTimestamp + elapsed);
 
@@ -219,7 +219,7 @@ contract DecisionMarketPairTest is Test {
 
     function test_TWAP_DoesNotAccumulateTwiceInSameBlock() public {
         _addLiquidity(alice, 100 ether, 100 ether);
-        vm.warp(block.timestamp + 50);
+        vm.warp(vm.getBlockTimestamp() + 50);
 
         pair.sync(); // first update this block
         uint256 afterFirst = pair.price0CumulativeLast();
@@ -233,7 +233,7 @@ contract DecisionMarketPairTest is Test {
     function test_TWAP_UsesOldReservesNotNewOnesForTheJustElapsedWindow() public {
         _addLiquidity(alice, 100 ether, 100 ether); // 1:1 ratio initially
 
-        vm.warp(block.timestamp + 100);
+        vm.warp(vm.getBlockTimestamp() + 100);
 
         // A swap changes the reserves - but the 100 seconds that just
         // elapsed were under the OLD 1:1 ratio, not the new post-swap one.

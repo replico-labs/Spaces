@@ -306,14 +306,14 @@ contract SortitionGovernanceTest is Test {
         token.setBalance(alice, 100 ether); // meet eligibilityThreshold to propose
         vm.prank(alice);
         id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castCouncilVote(id, SortitionGovernance.VoteType.For);
         vm.prank(bob);
         gov.castCouncilVote(id, SortitionGovernance.VoteType.For);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         gov.queueProposal(id);
     }
 
@@ -324,7 +324,7 @@ contract SortitionGovernanceTest is Test {
 
     function test_ExecuteProposal_Succeeds() public {
         uint256 id = _proposeVoteQueue();
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         gov.executeProposal(id);
         assertEq(uint8(gov.state(id)), uint8(SortitionGovernance.ProposalState.Executed));

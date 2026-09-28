@@ -93,7 +93,7 @@ contract OptimisticGovernanceTest is Test {
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");
         assertEq(uint8(gov.state(id)), uint8(OptimisticGovernance.ProposalState.ChallengeWindow));
 
-        vm.roll(block.number + defaultConfig().challengePeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().challengePeriod + 1);
         assertEq(uint8(gov.state(id)), uint8(OptimisticGovernance.ProposalState.Succeeded));
 
         gov.finalizeUnchallenged(id);
@@ -108,7 +108,7 @@ contract OptimisticGovernanceTest is Test {
         vm.prank(challenger);
         gov.challenge(id);
 
-        vm.roll(block.number + defaultConfig().challengePeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().challengePeriod + 1);
         vm.expectRevert(OptimisticGovernance.AlreadyChallenged.selector);
         gov.finalizeUnchallenged(id);
     }
@@ -124,9 +124,9 @@ contract OptimisticGovernanceTest is Test {
     function test_UnchallengedProposal_FullyExecutes() public {
         vm.prank(alice);
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().challengePeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().challengePeriod + 1);
         gov.finalizeUnchallenged(id);
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         gov.executeProposal(id);
         assertEq(uint8(gov.state(id)), uint8(OptimisticGovernance.ProposalState.Executed));
@@ -139,7 +139,7 @@ contract OptimisticGovernanceTest is Test {
     function test_Challenge_RevertsAfterWindowCloses() public {
         vm.prank(alice);
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().challengePeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().challengePeriod + 1);
 
         token.setBalance(challenger, CHALLENGE_BOND);
         vm.prank(challenger);

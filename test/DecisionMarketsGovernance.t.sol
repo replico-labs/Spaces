@@ -149,7 +149,7 @@ contract DecisionMarketsGovernanceTest is Test {
         gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 5 ether, 0);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         p = gov.getProposal(id);
@@ -162,7 +162,7 @@ contract DecisionMarketsGovernanceTest is Test {
         assertTrue(ConditionalVault(p.quoteVault).resolved());
         assertEq(ConditionalVault(p.baseVault).payoutPassNumerator(), 1);
 
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
         uint256 recipientBefore = recipient.balance;
         gov.executeProposal{value: 1 ether}(id);
 
@@ -180,7 +180,7 @@ contract DecisionMarketsGovernanceTest is Test {
         // and identical does not clear a positive threshold.
         uint256 id = _propose(1_000 ether, 10 ether);
 
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         DecisionMarketsGovernance.Proposal memory p = gov.getProposal(id);
@@ -194,7 +194,7 @@ contract DecisionMarketsGovernanceTest is Test {
 
     function test_ExecuteProposal_RevertsIfProposalDidNotPass() public {
         uint256 id = _propose(1_000 ether, 10 ether);
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         vm.expectRevert(DecisionMarketsGovernance.ProposalDidNotPass.selector);
@@ -216,7 +216,7 @@ contract DecisionMarketsGovernanceTest is Test {
     ///      approvals or conditional-token setup to reach the revert.
     function test_Trade_RevertsAfterTradingDeadline() public {
         uint256 id = _propose(1_000 ether, 10 ether);
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
 
         vm.expectRevert(DecisionMarketsGovernance.TradingWindowClosed.selector);
         gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 5 ether, 0);
@@ -224,7 +224,7 @@ contract DecisionMarketsGovernanceTest is Test {
 
     function test_FinalizeProposal_RevertsOnDoubleFinalize() public {
         uint256 id = _propose(1_000 ether, 10 ether);
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         vm.expectRevert(DecisionMarketsGovernance.AlreadyFinalized.selector);
@@ -243,7 +243,7 @@ contract DecisionMarketsGovernanceTest is Test {
 
     function test_ReclaimLiquidity_RevertsOnDoubleReclaim() public {
         uint256 id = _propose(1_000 ether, 10 ether);
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         gov.reclaimLiquidity(id);
@@ -254,7 +254,7 @@ contract DecisionMarketsGovernanceTest is Test {
 
     function test_ReclaimLiquidity_SendsRecoveredValueToProposer() public {
         uint256 id = _propose(1_000 ether, 10 ether);
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id); // untouched pools, fails - still fully reclaimable
 
         uint256 proposerBaseBefore = govToken.balanceOf(proposer);
@@ -285,7 +285,7 @@ contract DecisionMarketsGovernanceTest is Test {
         gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 5 ether, 0);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
         gov.finalizeProposal(id);
 
         p = gov.getProposal(id);

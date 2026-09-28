@@ -2,7 +2,7 @@
 
 A governance-agnostic DAO framework — an original, from-scratch on-chain governance protocol where a DAO's treasury and its governance rules are kept as two separate, swappable pieces, rather than locked together.
 
-Every module — proposal lifecycle, voting, quorum/approval math, timelocks, and every one of the ten governance models below — is implemented from scratch, purpose-built for this framework. The companion Telegram bot lives in [`protean-bot`](https://github.com/replico-labs/protean-bot).
+Every module — proposal lifecycle, voting, quorum/approval math, timelocks, and every one of the ten governance models below — is implemented from scratch, purpose-built for this framework. The companion bot — Telegram, Discord and Slack — lives in [`protean-bot`](https://github.com/replico-labs/protean-bot).
 
 ## Why this exists
 
@@ -41,7 +41,7 @@ Every factory deploys **minimal proxy clones**, not full contracts. Each contrac
 
 This isn't an optimization — it's what makes deployment possible at all. Factories that `new` their child contracts embed each child's full creation bytecode, which put every factory at 26–99 KB against the EVM's 24,576-byte limit. Deploying implementations from inside a factory's own constructor does **not** help (the bytecode is embedded either way). Implementations are deployed as separate transactions, and each factory receives their addresses as constructor arguments. Factories now sit at 4–8 KB.
 
-Every implementation's constructor calls `_disableInitializers()`, so implementations themselves can never be initialized — only clones can.
+The OpenZeppelin-based implementations (every governance model, `GovernanceToken`, `StakedGovernanceToken`, `Treasury`) call `_disableInitializers()` in their constructor, so the implementation itself can never be initialized — only clones can. `ConditionalVault`, `ConditionalToken`, `DecisionMarketPair` and `OpportunityMarket` use a small hand-rolled `_initialized` flag with no constructor lock. That is harmless: clone + initialize happen in one transaction, every clone has its own storage, and none of these contracts use `delegatecall` or `selfdestruct`. Anyone can deploy their own copy of an implementation, so "same ABI" never proves a contract is legitimate — check the factory's registry (e.g. `OpportunityMarketFactory.isMarket`).
 
 ## Governance models
 
@@ -73,6 +73,8 @@ Plus **Opportunity Markets** — confidential, FHE-encrypted backing of listed o
 | `treasury/Treasury.sol` | Holds funds; acts only on instructions from its registered `governance` |
 | `factory/` | One clone-based factory per model, plus the shared `DAOFactoryLib` |
 | `distribution/WelcomeDistributor.sol` | Optional capped welcome-token distribution, one claim per address |
+| `wrapper/GuardWrapper.sol` | Optional security council: governance proposes an instruction, a signer threshold confirms it before it is forwarded. Signers can never initiate anything |
+| `marketplace/NFTMarketplaceWrapper.sol` | Optional EIP-1271 signer for NFT marketplaces — and where a DAO's NFTs live (see [NFTs](#nfts)) |
 | `randomness/` | `IRandomnessSource` + Switchboard and Chainlink adapters (used by Sortition) |
 | `oracles/` | Switchboard and Chainlink price-feed adapters behind `IMetricOracle` (used by Sowellian) |
 
@@ -84,11 +86,24 @@ Plus **Opportunity Markets** — confidential, FHE-encrypted backing of listed o
 - **Randomness and price data are provider-agnostic.** Sortition and Sowellian depend only on small interfaces; which oracle network sits behind them is a per-deployment choice.
 - **One oracle adapter, many feeds.** `IMetricOracle.latestValue(bytes32 selector)` takes a per-proposal selector stored on each Sowellian proposal. `SwitchboardPriceFeedAdapter` treats it as the Switchboard `feedId`, so one deployment serves every feed. `ChainlinkPriceFeedAdapter` ignores it and stays bound to one feed via its constructor — that matches how Chainlink works (each feed is its own contract), so Chainlink needs one adapter per feed.
 
+## Security council (GuardWrapper)
+
+A DAO can put a signer council between its governance and its assets. The DAO passes two proposals — `Treasury.transferGovernance(wrapper)` and, on the raw token, `transferOwnership(wrapper)` — after which Treasury and minting calls only work through the wrapper: governance calls `proposeInstruction(target, value, data)`, and the call is forwarded once enough signers `confirmInstruction`. Signers can confirm, revoke or reject, never initiate. Signer replacement is tenure-gated and needs no signer confirmation — the on-chain timestamp check is the proof — so a council can't entrench itself, and governance can't bypass tenure either. The bot's `/handovertowrapper` computes both handover proposals, and `/proposeaction` automatically routes Treasury and token actions through a linked wrapper after the handover.
+
+## NFTs
+
+`Treasury` has no ERC721/ERC1155 receiver hooks, so `safeTransferFrom` into it reverts — and every ERC1155 transfer is a safe one. Rather than widen the Treasury, **a DAO's NFTs live in its `NFTMarketplaceWrapper`**:
+
+- NFTs are sent to the wrapper, never to the Treasury.
+- The wrapper lists them (governance approves the marketplace order hash; the wrapper answers EIP-1271 `isValidSignature`), sends them out (`transferERC721` / `transferERC1155` — which refuse the Treasury as a recipient), or calls a marketplace directly (`execute`).
+- Money comes back to the Treasury: `sweepNative` and `sweepERC20` send sale proceeds there.
+- Every one of those is `onlyGovernance` — a passed proposal.
+
 ## Decision Markets
 
 A proposal's two outcomes — pass and fail — each get a live trading market over a fixed window. Real tokens are split into matched pass/fail conditional tokens; people trade the side they believe in; at the end, whichever market's time-weighted average price is meaningfully higher decides the outcome. Winning-side tokens redeem for real value; losing-side tokens are worthless.
 
-Native MON is wrapped into WMON when a proposal is seeded. Redemption and liquidity reclaim return **WMON, not MON** — call `WMON.withdraw()` to unwrap.
+Native currency is wrapped when a proposal is seeded (WMON on Monad; the factory takes the chain's canonical wrapped-native token as `WMON_ADDRESS`, so WETH on Base, WHYPE on HyperEVM). Redemption and liquidity reclaim return the **wrapped** token — call `withdraw()` on it to unwrap.
 
 The constant-product AMM is a derivative of Uniswap V2 core (`github.com/Uniswap/v2-core`), GPL-3.0-or-later; `DecisionMarketPair.sol` carries that license. Everything else in this repository is MIT.
 
@@ -119,23 +134,27 @@ forge-fhevm/=lib/forge-fhevm/src/
 
 `openzeppelin-contracts-upgradeable` v5.6.1 does **not** ship `ReentrancyGuardUpgradeable`; `StakedGovernanceToken` uses a small, explicitly initialized guard of its own instead.
 
-### `--via-ir` requirements
+### `--via-ir` and contract size
 
-Foundry compiles the whole project together, so the simplest rule is: **always build, test, and deploy with `--via-ir`.** For reference:
+Foundry compiles the whole project together, so the simplest rule is: **always build, test, and deploy with `--via-ir`** — `SortitionDAOFactory` and `DecisionMarketsDAOFactory` hit "stack too deep" in `createDAO()` without it.
 
-| Contract | Without `--via-ir` | Reason |
+Contract size depends on the chain:
+
+| Chain | Size limit | Build with |
 |---|---|---|
-| `SortitionDAOFactory`, `DecisionMarketsDAOFactory` | Won't compile | "Stack too deep" in `createDAO()` |
-| `DelegateGovernance`, `SortitionGovernance`, `SowellianGovernance` | Compiles, but exceeds 24,576 bytes | Won't deploy |
-| Everything else | Fine | — |
+| Monad (testnet, mainnet) | None in practice — `DelegateGovernance` and `SowellianGovernance` (~29.2 KB unoptimized) are deployed there | the default profile, `--via-ir` |
+| Base, Base Sepolia, HyperEVM | EIP-170: 24,576 bytes | `FOUNDRY_PROFILE=size-limited` (via-IR + optimizer, 200 runs). Every contract is under 15 KB; the largest are `DelegateGovernance` 14.6 KB and `SowellianGovernance` 14.5 KB |
+
+With the optimizer on, via-IR caches `block.number`/`block.timestamp` across `vm.roll`/`vm.warp` inside a test, so tests read `vm.getBlockNumber()`/`vm.getBlockTimestamp()` instead. With those test edits the full suite passes under both profiles, which means the exact bytecode you deploy to a size-limited chain is the bytecode the tests ran against.
 
 ## Testing
 
 ```bash
-forge test --via-ir
+forge test --via-ir                          # default profile (Monad)
+FOUNDRY_PROFILE=size-limited forge test      # optimized, as deployed to Base / HyperEVM
 ```
 
-Current result: **468 tests passed, 0 failed, 0 skipped** across 30 suites — every governance model, every factory, the token/treasury core, adapters, and the futarchy system.
+Current result: **539 tests passed, 0 failed, 0 skipped** across 32 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
 
 ## Deployment
 
@@ -150,7 +169,13 @@ forge script script/Deploy<Model>DAOFactory.s.sol:Deploy<Model>DAOFactory \
   --verify
 ```
 
-`<Model>` is one of: *(empty, for token-weighted)*, `Quadratic`, `Liquid`, `Optimistic`, `Delegate`, `Board`, `Sortition`, `Conviction`, `Sowellian`, `DecisionMarkets`. `DeployDecisionMarketsDAOFactory` additionally needs `WMON_ADDRESS`. Opportunity Markets: `DeployOpportunityMarketFactory.s.sol` against a **Sepolia** RPC.
+`<Model>` is one of: *(empty, for token-weighted)*, `Quadratic`, `Liquid`, `Optimistic`, `Delegate`, `Board`, `Sortition`, `Conviction`, `Sowellian`, `DecisionMarkets`. `DeployDecisionMarketsDAOFactory` additionally needs `WMON_ADDRESS` (the chain's canonical wrapped-native token). Opportunity Markets: `DeployOpportunityMarketFactory.s.sol` against a **Sepolia** RPC.
+
+On **Base / Base Sepolia / HyperEVM**, prefix every deploy with `FOUNDRY_PROFILE=size-limited` (see [contract size](#--via-ir-and-contract-size)).
+
+On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min, 30M gas). Deploying an implementation or factory needs more than 2M gas, so the deploying address must be switched to big blocks first (a HyperCore `evmUserModify` action with `usingBigBlocks: true` — check Hyperliquid's docs for the current method), and switched back afterwards. DAO creation fits in small blocks: the heaviest, `DelegateDAOFactory.createDAO`, measured 1.29M gas.
+
+`GuardWrapper` and `NFTMarketplaceWrapper` have no deploy scripts: they are per-DAO and the bot deploys them on demand (`/deployguardwrapper`, `/deploynftwrapper`).
 
 Oracle and randomness adapters are standalone, one-time deployments:
 
@@ -207,30 +232,19 @@ External dependencies on Monad testnet (third-party, verified against official d
 | OpportunityMarketFactory | `0xe61C9d371D3BEA6ceA5359E745593D8ebB39BEC5` |
 | OpportunityMarket implementation | `0xc708729e349ED5F7dDB459Ec1d68b6163125EfE6` |
 
-### Hyperliquid (HyperEVM) — not yet deployed
+### Base, HyperEVM and Monad mainnet — not yet deployed
 
-Chain ID: `998` · RPC: `https://rpc.hyperliquid-testnet.xyz/evm`
+The bot supports these networks (see `protean-bot`'s README, "Networks"); each needs its own factories deployed before DAOs can be created there.
 
-| Contract | Address |
-|---|---|
-| DAOFactory (token-weighted) | |
-| QuadraticDAOFactory | |
-| LiquidDAOFactory | |
-| OptimisticDAOFactory | |
-| DelegateDAOFactory | |
-| BoardDAOFactory | |
-| SortitionDAOFactory | |
-| ConvictionDAOFactory | |
-| SowellianDAOFactory | |
-| DecisionMarketsDAOFactory | |
-| Randomness adapter (Sortition) | |
-| Price-feed adapter (Sowellian) | |
+| Network | Chain ID | Public RPC | Build profile |
+|---|---|---|---|
+| Monad mainnet | 143 | `https://rpc.monad.xyz` | default |
+| Base | 8453 | `https://mainnet.base.org` | `size-limited` |
+| Base Sepolia | 84532 | `https://sepolia.base.org` | `size-limited` |
+| HyperEVM | 999 | `https://rpc.hyperliquid.xyz/evm` | `size-limited`, big blocks for deploys |
+| HyperEVM testnet | 998 | `https://rpc.hyperliquid-testnet.xyz/evm` | `size-limited`, big blocks for deploys |
 
-Before deploying here, verify: the chain's canonical wrapped native token (needed as `WMON_ADDRESS` for Decision Markets); whether Switchboard and/or Chainlink have live randomness and feed infrastructure on this network, and their real addresses. Opportunity Markets cannot deploy here (see above).
-
-### Base — not yet deployed
-
-Chain ID: `84532` · RPC: `https://sepolia.base.org`
+Chain IDs and RPCs are from viem's chain definitions. For each network, fill in:
 
 | Contract | Address |
 |---|---|
@@ -247,12 +261,12 @@ Chain ID: `84532` · RPC: `https://sepolia.base.org`
 | Randomness adapter (Sortition) | |
 | Price-feed adapter (Sowellian) | |
 
-Same checks as Hyperliquid: the canonical wrapped native token for Decision Markets, real Switchboard/Chainlink addresses on this network, and no Opportunity Markets.
+Before deploying to any of them, verify against the chain's own docs: the canonical wrapped native token (`WMON_ADDRESS` for Decision Markets — WETH on Base, WHYPE on HyperEVM); whether Switchboard and/or Chainlink run randomness and price feeds there, and their real addresses. Opportunity Markets cannot deploy on any of them (see above).
 
 ## Known gaps
 
 - **No audit.** Sowellian, Decision Markets, and Opportunity Markets move real capital based on market or oracle resolution — test adversarially before real funds touch them.
-- **Keepers are required for Switchboard.** Both randomness and price feeds are pull-based; someone must submit settlement or feed updates. The bot ships a sortition keeper; a price-feed updater is not built yet.
-- **No transaction compiler.** Proposals take raw target/value/calldata.
+- **Keepers are required for Switchboard.** Both randomness and price feeds are pull-based; someone must submit settlement or feed updates. The bot ships both: a sortition keeper and a price-feed keeper for Sowellian's oracle track (one process per network).
+- **Proposals are calldata.** The contracts take raw target/value/calldata. The bot's verified action library covers every native admin function (`/proposeaction`); external protocol actions (DEXs, lending, staking, marketplaces) are not built yet.
 - **Resolver incentives.** A correct Sowellian resolver gets their bond back, not an additional reward.
 - **Rounding dust.** Pari-mutuel payouts round down; tiny residual balances are recoverable by an ordinary governance proposal.

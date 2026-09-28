@@ -60,7 +60,7 @@ contract GuardWrapperTest is Test {
         assertEq(wrapper.governance(), governance);
         assertEq(wrapper.requiredApprovals(), REQUIRED_APPROVALS);
         assertEq(wrapper.tenureLength(), TENURE_LENGTH);
-        assertEq(wrapper.tenureEnd(), block.timestamp + TENURE_LENGTH);
+        assertEq(wrapper.tenureEnd(), vm.getBlockTimestamp() + TENURE_LENGTH);
         assertTrue(wrapper.isSigner(signer1));
         assertTrue(wrapper.isSigner(signer2));
         assertTrue(wrapper.isSigner(signer3));
@@ -359,7 +359,7 @@ contract GuardWrapperTest is Test {
         address[] memory newSigners = new address[](1);
         newSigners[0] = makeAddr("new1");
 
-        vm.warp(block.timestamp + TENURE_LENGTH - 1); // one second before tenure ends
+        vm.warp(vm.getBlockTimestamp() + TENURE_LENGTH - 1); // one second before tenure ends
         vm.prank(governance);
         vm.expectRevert(GuardWrapper.TenureNotYetEnded.selector);
         wrapper.replaceSigners(newSigners, 1);
@@ -372,7 +372,7 @@ contract GuardWrapperTest is Test {
         newSigners[0] = newSigner1;
         newSigners[1] = newSigner2;
 
-        vm.warp(block.timestamp + TENURE_LENGTH);
+        vm.warp(vm.getBlockTimestamp() + TENURE_LENGTH);
 
         // No signer confirmation involved at all - governance alone,
         // once tenure has genuinely passed.
@@ -385,11 +385,11 @@ contract GuardWrapperTest is Test {
         assertFalse(wrapper.isSigner(signer2));
         assertFalse(wrapper.isSigner(signer3));
         assertEq(wrapper.requiredApprovals(), 2);
-        assertEq(wrapper.tenureEnd(), block.timestamp + TENURE_LENGTH);
+        assertEq(wrapper.tenureEnd(), vm.getBlockTimestamp() + TENURE_LENGTH);
     }
 
     function test_ReplaceSigners_OnlyGovernanceCanCall() public {
-        vm.warp(block.timestamp + TENURE_LENGTH);
+        vm.warp(vm.getBlockTimestamp() + TENURE_LENGTH);
         address[] memory newSigners = new address[](1);
         newSigners[0] = makeAddr("new1");
 

@@ -14,8 +14,14 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 ///         to keep Treasury's own trust model minimal and marketplace-
 ///         agnostic. One deployed per DAO, same pattern as
 ///         ChainlinkPriceFeedAdapter - not shared across DAOs, since
-///         (unlike a price adapter) this one temporarily holds real
-///         assets.
+///         (unlike a price adapter) this one holds real assets.
+/// @dev NFT CUSTODY: this wrapper, not Treasury, is where a DAO's NFTs
+///      live. Treasury has no ERC721/ERC1155 receiver hooks, so every
+///      safeTransferFrom into it reverts (and every ERC1155 transfer is a
+///      safe one). Rather than widen Treasury, NFTs are sent here and
+///      stay here - listed, sold or handed out from here - and only
+///      money (native currency, ERC20) is swept back to Treasury.
+///      transferERC721/transferERC1155 refuse Treasury as a recipient.
 /// @dev SCOPE NOTE: `isValidSignature` implements the standard
 ///      "approved-hash" EIP-1271 pattern used by Gnosis Safe and other
 ///      smart-contract wallets - it does not verify a cryptographic
@@ -41,8 +47,8 @@ contract NFTMarketplaceWrapper {
 
     event OrderHashApproved(bytes32 indexed orderHash);
     event OrderHashRevoked(bytes32 indexed orderHash);
-    event ERC721Swept(address indexed token, uint256 indexed tokenId, address indexed to);
-    event ERC1155Swept(address indexed token, uint256 indexed tokenId, uint256 amount, address indexed to);
+    event ERC721Transferred(address indexed token, uint256 indexed tokenId, address indexed to);
+    event ERC1155Transferred(address indexed token, uint256 indexed tokenId, uint256 amount, address indexed to);
     event NativeSwept(uint256 amount, address indexed to);
     event ERC20Swept(address indexed token, uint256 amount, address indexed to);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
@@ -50,6 +56,7 @@ contract NFTMarketplaceWrapper {
     error ZeroAddress();
     error Unauthorized();
     error TransferFailed();
+    error TreasuryCannotHoldNFTs();
 
     modifier onlyGovernance() {
         if (msg.sender != governance) revert Unauthorized();
@@ -113,17 +120,24 @@ contract NFTMarketplaceWrapper {
         treasury = newTreasury;
     }
 
-    /// @notice Sweeps an ERC721 this wrapper is holding back to Treasury
-    ///         - e.g. after a listing is cancelled unsold.
-    function sweepERC721(address token, uint256 tokenId) external onlyGovernance {
-        IERC721(token).safeTransferFrom(address(this), treasury, tokenId);
-        emit ERC721Swept(token, tokenId, treasury);
+    /// @notice Sends an ERC721 this wrapper holds to `to` - e.g. a
+    ///         member reward or an off-marketplace sale. Never to
+    ///         Treasury: NFTs stay in this wrapper (see contract notes).
+    ///         safeTransferFrom, so a contract recipient that can't hold
+    ///         NFTs makes this revert instead of locking the token.
+    function transferERC721(address token, address to, uint256 tokenId) external onlyGovernance {
+        if (to == address(0)) revert ZeroAddress();
+        if (to == treasury) revert TreasuryCannotHoldNFTs();
+        IERC721(token).safeTransferFrom(address(this), to, tokenId);
+        emit ERC721Transferred(token, tokenId, to);
     }
 
-    /// @notice Sweeps an ERC1155 balance this wrapper is holding back to Treasury.
-    function sweepERC1155(address token, uint256 tokenId, uint256 amount) external onlyGovernance {
-        IERC1155(token).safeTransferFrom(address(this), treasury, tokenId, amount, "");
-        emit ERC1155Swept(token, tokenId, amount, treasury);
+    /// @notice Sends ERC1155 tokens this wrapper holds to `to`. Never to Treasury.
+    function transferERC1155(address token, address to, uint256 tokenId, uint256 amount) external onlyGovernance {
+        if (to == address(0)) revert ZeroAddress();
+        if (to == treasury) revert TreasuryCannotHoldNFTs();
+        IERC1155(token).safeTransferFrom(address(this), to, tokenId, amount, "");
+        emit ERC1155Transferred(token, tokenId, amount, to);
     }
 
     /// @notice Sweeps native currency proceeds (e.g. from a filled sale) back to Treasury.

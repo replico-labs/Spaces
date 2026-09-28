@@ -95,7 +95,7 @@ contract DelegateGovernanceTest is Test {
     }
 
     function test_Constructor_SetsTermEnd() public view {
-        assertEq(gov.currentTermEnd(), block.timestamp + 30 days);
+        assertEq(gov.currentTermEnd(), vm.getBlockTimestamp() + 30 days);
     }
 
     function test_Constructor_RevertsOnCouncilSizeMismatch() public {
@@ -150,7 +150,7 @@ contract DelegateGovernanceTest is Test {
     function test_CastCouncilVote_OnlyCouncilMember() public {
         vm.prank(alice);
         uint256 id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(dave);
         vm.expectRevert(DelegateGovernance.NotCouncilMember.selector);
@@ -160,7 +160,7 @@ contract DelegateGovernanceTest is Test {
     function test_CastCouncilVote_RevertsOnDoubleVote() public {
         vm.prank(alice);
         uint256 id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.For);
@@ -173,27 +173,27 @@ contract DelegateGovernanceTest is Test {
     function _proposeVoteAndQueue() internal returns (uint256 id) {
         vm.prank(alice);
         id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.For);
         vm.prank(bob);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.For);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         gov.queueCouncilProposal(id);
     }
 
     function test_QueueCouncilProposal_RevertsWhenQuorumNotReached() public {
         vm.prank(alice);
         uint256 id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         // Only one of three council members votes - below councilQuorum of 2.
         vm.prank(alice);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.For);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         vm.expectRevert(DelegateGovernance.CouncilQuorumNotReached.selector);
         gov.queueCouncilProposal(id);
     }
@@ -201,14 +201,14 @@ contract DelegateGovernanceTest is Test {
     function test_QueueCouncilProposal_RevertsWhenApprovalNotMet() public {
         vm.prank(alice);
         uint256 id = gov.proposeCouncilAction(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.For);
         vm.prank(bob);
         gov.castCouncilVote(id, DelegateGovernance.VoteType.Against);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         vm.expectRevert(DelegateGovernance.CouncilApprovalNotMet.selector);
         gov.queueCouncilProposal(id);
     }
@@ -226,7 +226,7 @@ contract DelegateGovernanceTest is Test {
 
     function test_ExecuteCouncilProposal_Succeeds() public {
         uint256 id = _proposeVoteAndQueue();
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         gov.executeCouncilProposal(id);
         assertEq(uint8(gov.state(id)), uint8(DelegateGovernance.ProposalState.Executed));

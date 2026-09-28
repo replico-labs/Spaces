@@ -98,7 +98,7 @@ contract BoardDAOFactoryTest is Test {
         assertEq(daoCreator, creator);
         assertEq(governance, address(gov));
         assertEq(treasuryAddr, address(treasury));
-        assertEq(createdAt, block.timestamp);
+        assertEq(createdAt, vm.getBlockTimestamp());
     }
 
     function test_CreateDAO_TracksCreatorDAOs() public {

@@ -6,6 +6,9 @@ import {NFTMarketplaceWrapper} from "../src/marketplace/NFTMarketplaceWrapper.so
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {Treasury} from "../src/treasury/Treasury.sol";
 
 /// @dev Minimal real ERC721 for testing - not a mock of behavior, an
 ///      actual OZ ERC721 instance, so safeTransferFrom's real receiver-
@@ -151,47 +154,88 @@ contract NFTMarketplaceWrapperTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            SWEEP FUNCTIONS
+                    SENDING NFTS (never to Treasury)
     //////////////////////////////////////////////////////////////*/
 
-    function test_SweepERC721_SendsToTreasury() public {
-        nft721.mint(address(this), 1);
-        nft721.safeTransferFrom(address(this), address(wrapper), 1);
+    address internal member = makeAddr("member");
+
+    function test_TransferERC721_SendsToRecipient() public {
+        nft721.mint(address(wrapper), 1);
 
         vm.prank(governance);
-        wrapper.sweepERC721(address(nft721), 1);
+        wrapper.transferERC721(address(nft721), member, 1);
 
-        assertEq(nft721.ownerOf(1), treasury);
+        assertEq(nft721.ownerOf(1), member);
     }
 
-    function test_SweepERC721_RevertsForNonGovernance() public {
-        nft721.mint(address(this), 1);
-        nft721.safeTransferFrom(address(this), address(wrapper), 1);
+    function test_TransferERC721_RevertsToTreasury() public {
+        nft721.mint(address(wrapper), 1);
+
+        vm.prank(governance);
+        vm.expectRevert(NFTMarketplaceWrapper.TreasuryCannotHoldNFTs.selector);
+        wrapper.transferERC721(address(nft721), treasury, 1);
+    }
+
+    function test_TransferERC721_RevertsToZeroAddress() public {
+        nft721.mint(address(wrapper), 1);
+
+        vm.prank(governance);
+        vm.expectRevert(NFTMarketplaceWrapper.ZeroAddress.selector);
+        wrapper.transferERC721(address(nft721), address(0), 1);
+    }
+
+    /// @dev safeTransferFrom protects the NFT: a contract that can't hold
+    ///      NFTs (here an ERC20) makes the transfer revert, not lock it.
+    function test_TransferERC721_RevertsToContractThatCannotHoldNFTs() public {
+        nft721.mint(address(wrapper), 1);
+
+        vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(token20)));
+        wrapper.transferERC721(address(nft721), address(token20), 1);
+
+        assertEq(nft721.ownerOf(1), address(wrapper));
+    }
+
+    function test_TransferERC721_RevertsForNonGovernance() public {
+        nft721.mint(address(wrapper), 1);
 
         vm.prank(attacker);
         vm.expectRevert(NFTMarketplaceWrapper.Unauthorized.selector);
-        wrapper.sweepERC721(address(nft721), 1);
+        wrapper.transferERC721(address(nft721), attacker, 1);
     }
 
-    function test_SweepERC1155_SendsToTreasury() public {
+    function test_TransferERC1155_SendsToRecipient() public {
         nft1155.mint(address(this), 1, 10);
         nft1155.safeTransferFrom(address(this), address(wrapper), 1, 10, "");
 
         vm.prank(governance);
-        wrapper.sweepERC1155(address(nft1155), 1, 10);
+        wrapper.transferERC1155(address(nft1155), member, 1, 4);
 
-        assertEq(nft1155.balanceOf(treasury, 1), 10);
-        assertEq(nft1155.balanceOf(address(wrapper), 1), 0);
+        assertEq(nft1155.balanceOf(member, 1), 4);
+        assertEq(nft1155.balanceOf(address(wrapper), 1), 6);
     }
 
-    function test_SweepERC1155_RevertsForNonGovernance() public {
+    function test_TransferERC1155_RevertsToTreasury() public {
+        nft1155.mint(address(this), 1, 10);
+        nft1155.safeTransferFrom(address(this), address(wrapper), 1, 10, "");
+
+        vm.prank(governance);
+        vm.expectRevert(NFTMarketplaceWrapper.TreasuryCannotHoldNFTs.selector);
+        wrapper.transferERC1155(address(nft1155), treasury, 1, 10);
+    }
+
+    function test_TransferERC1155_RevertsForNonGovernance() public {
         nft1155.mint(address(this), 1, 10);
         nft1155.safeTransferFrom(address(this), address(wrapper), 1, 10, "");
 
         vm.prank(attacker);
         vm.expectRevert(NFTMarketplaceWrapper.Unauthorized.selector);
-        wrapper.sweepERC1155(address(nft1155), 1, 10);
+        wrapper.transferERC1155(address(nft1155), attacker, 1, 10);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    SWEEPING MONEY BACK TO TREASURY
+    //////////////////////////////////////////////////////////////*/
 
     function test_SweepNative_SendsToTreasury() public {
         vm.deal(address(wrapper), 1 ether);
@@ -301,5 +345,55 @@ contract NFTMarketplaceWrapperTest is Test {
 
         assertEq(newTreasury.balance, 1 ether);
         assertEq(treasury.balance, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            REAL TREASURY - the money path works end to end
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev The tests above use a plain address as treasury; these use a
+    ///      real Treasury clone, as the factories deploy it.
+    function _realTreasuryWrapper() internal returns (NFTMarketplaceWrapper w, Treasury t) {
+        t = Treasury(payable(Clones.clone(address(new Treasury()))));
+        t.initialize(governance);
+        w = new NFTMarketplaceWrapper(governance, address(t));
+    }
+
+    function test_RealTreasury_SweepNativeArrives() public {
+        (NFTMarketplaceWrapper w, Treasury t) = _realTreasuryWrapper();
+        vm.deal(address(w), 1 ether);
+
+        vm.prank(governance);
+        w.sweepNative(1 ether);
+
+        assertEq(address(t).balance, 1 ether);
+    }
+
+    function test_RealTreasury_SweepERC20Arrives() public {
+        (NFTMarketplaceWrapper w, Treasury t) = _realTreasuryWrapper();
+        token20.transfer(address(w), 100 ether);
+
+        vm.prank(governance);
+        w.sweepERC20(address(token20), 100 ether);
+
+        assertEq(token20.balanceOf(address(t)), 100 ether);
+    }
+
+    /// @dev Why NFTs never go to Treasury: it has no receiver hooks.
+    function test_RealTreasury_CannotReceiveNFTsViaSafeTransfer() public {
+        (, Treasury t) = _realTreasuryWrapper();
+        nft721.mint(address(this), 1);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(t)));
+        nft721.safeTransferFrom(address(this), address(t), 1);
+    }
+
+    function test_RealTreasury_TransferERC721ToItIsRefused() public {
+        (NFTMarketplaceWrapper w, Treasury t) = _realTreasuryWrapper();
+        nft721.mint(address(w), 1);
+
+        vm.prank(governance);
+        vm.expectRevert(NFTMarketplaceWrapper.TreasuryCannotHoldNFTs.selector);
+        w.transferERC721(address(nft721), address(t), 1);
     }
 }

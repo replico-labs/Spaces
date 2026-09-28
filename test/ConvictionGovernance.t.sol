@@ -113,11 +113,11 @@ contract ConvictionGovernanceTest is Test {
         vm.prank(alice);
         gov.support(id); // totalSupport = 100 ether, conviction starts at 0
 
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         // 1 block elapsed * 10 ether/block growth rate = conviction should be 10 ether
         assertEq(gov.previewConviction(id), 10 ether);
 
-        vm.roll(block.number + 4);
+        vm.roll(vm.getBlockNumber() + 4);
         // 5 blocks total elapsed since support * 10 ether/block = 50 ether
         assertEq(gov.previewConviction(id), 50 ether);
     }
@@ -132,7 +132,7 @@ contract ConvictionGovernanceTest is Test {
 
         // Growth rate is 10 ether/block; after 10 blocks it would "want" to
         // reach 100 ether, but must clamp at the 25 ether target.
-        vm.roll(block.number + 10);
+        vm.roll(vm.getBlockNumber() + 10);
         assertEq(gov.previewConviction(id), 25 ether);
     }
 
@@ -143,14 +143,14 @@ contract ConvictionGovernanceTest is Test {
 
         vm.prank(alice);
         gov.support(id);
-        vm.roll(block.number + 5); // conviction settles to 50 ether when touched next
+        vm.roll(vm.getBlockNumber() + 5); // conviction settles to 50 ether when touched next
 
         vm.prank(alice);
         gov.withdrawSupport(); // settles conviction to 50 ether, then target drops to 0
 
         assertEq(gov.previewConviction(id), 50 ether); // just settled, no blocks passed yet
 
-        vm.roll(block.number + 2);
+        vm.roll(vm.getBlockNumber() + 2);
         // target is now 0; ramps down by 2 blocks * 10 ether/block = 20 ether
         assertEq(gov.previewConviction(id), 30 ether);
     }
@@ -164,7 +164,7 @@ contract ConvictionGovernanceTest is Test {
 
         vm.prank(alice);
         gov.support(id1);
-        vm.roll(block.number + 3); // id1 would settle to 30 ether if touched
+        vm.roll(vm.getBlockNumber() + 3); // id1 would settle to 30 ether if touched
 
         vm.prank(alice);
         gov.support(id2); // settles id1 to 30 ether and withdraws; id2 starts fresh
@@ -309,7 +309,7 @@ contract ConvictionGovernanceTest is Test {
         vm.prank(bob);
         gov.support(id); // total support now 1000 ether
 
-        vm.roll(block.number + 200); // plenty of blocks to ramp fully to 1000 ether
+        vm.roll(vm.getBlockNumber() + 200); // plenty of blocks to ramp fully to 1000 ether
         gov.queueProposal(id);
 
         assertEq(uint8(gov.state(id)), uint8(ConvictionGovernance.ProposalState.Queued));
@@ -321,7 +321,7 @@ contract ConvictionGovernanceTest is Test {
         uint256 id = gov.propose(_actionWithValue(0), "ipfs://p1");
         vm.prank(alice);
         gov.support(id);
-        vm.roll(block.number + 200);
+        vm.roll(vm.getBlockNumber() + 200);
         gov.queueProposal(id);
 
         vm.expectRevert(ConvictionGovernance.ProposalNotExecutable.selector);
@@ -334,10 +334,10 @@ contract ConvictionGovernanceTest is Test {
         uint256 id = gov.propose(_actionWithValue(1 ether), "ipfs://p1");
         vm.prank(alice);
         gov.support(id);
-        vm.roll(block.number + 300); // ramp past required (1000 + 1 ether)
+        vm.roll(vm.getBlockNumber() + 300); // ramp past required (1000 + 1 ether)
         gov.queueProposal(id);
 
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
         gov.executeProposal{value: 1 ether}(id);
 
         assertEq(uint8(gov.state(id)), uint8(ConvictionGovernance.ProposalState.Executed));

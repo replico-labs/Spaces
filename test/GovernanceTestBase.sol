@@ -104,7 +104,7 @@ abstract contract GovernanceTestBase is Test {
         // Advance one block so this checkpoint is safely in the past by the
         // time anything checks getPastVotes(to, block.number - 1) (e.g. the
         // proposal threshold check) or a proposal snapshot.
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
     }
 
     function _singleAction(

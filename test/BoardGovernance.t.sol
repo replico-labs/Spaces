@@ -189,7 +189,7 @@ contract BoardGovernanceTest is Test {
 
     function test_ExecuteTransaction_RevertsAfterExpiry() public {
         uint256 id = _proposeAndQueue();
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + defaultConfig().executionPeriod + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + defaultConfig().executionPeriod + 1);
 
         vm.expectRevert(BoardGovernance.ProposalExpired.selector);
         gov.executeTransaction(id);
@@ -197,7 +197,7 @@ contract BoardGovernanceTest is Test {
 
     function test_ExecuteTransaction_Succeeds() public {
         uint256 id = _proposeAndQueue();
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         gov.executeTransaction(id);
         assertEq(uint8(gov.state(id)), uint8(BoardGovernance.ProposalState.Executed));
@@ -212,7 +212,7 @@ contract BoardGovernanceTest is Test {
         vm.prank(bob);
         gov.confirmTransaction(id);
 
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         uint256 before = recipient.balance;
         gov.executeTransaction{value: 1 ether}(id);
@@ -227,7 +227,7 @@ contract BoardGovernanceTest is Test {
         uint256 id = gov.proposeTransaction(actions, "ipfs://p1");
         vm.prank(bob);
         gov.confirmTransaction(id);
-        vm.warp(block.timestamp + defaultConfig().timelockDelay + 1);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().timelockDelay + 1);
 
         vm.expectRevert(BoardGovernance.InvalidValue.selector);
         gov.executeTransaction(id); // sends 0 ETH, action needs 1 ether

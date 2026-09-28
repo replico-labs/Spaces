@@ -179,29 +179,29 @@ contract GovernanceTokenTest is Test {
         vm.prank(recipient);
         token.delegate(recipient);
 
-        uint256 blockAtDelegation = block.number;
-        vm.roll(block.number + 1);
+        uint256 blockAtDelegation = vm.getBlockNumber();
+        vm.roll(vm.getBlockNumber() + 1);
 
         vm.prank(recipient);
         bool ok = token.transfer(alice, 500 ether);
         assertTrue(ok);
 
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
 
         // Past checkpoint still reflects the pre-transfer balance.
         assertEq(token.getPastVotes(recipient, blockAtDelegation), INITIAL_SUPPLY);
     }
 
     function test_GetPastTotalSupply_ReflectsMintHistory() public {
-        uint256 blockBeforeMint = block.number;
-        vm.roll(block.number + 1);
+        uint256 blockBeforeMint = vm.getBlockNumber();
+        vm.roll(vm.getBlockNumber() + 1);
 
         vm.prank(owner);
         token.mint(alice, 100 ether);
 
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
 
         assertEq(token.getPastTotalSupply(blockBeforeMint), INITIAL_SUPPLY);
-        assertEq(token.getPastTotalSupply(block.number - 1), INITIAL_SUPPLY + 100 ether);
+        assertEq(token.getPastTotalSupply(vm.getBlockNumber() - 1), INITIAL_SUPPLY + 100 ether);
     }
 }

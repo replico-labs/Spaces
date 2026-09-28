@@ -45,7 +45,7 @@ contract IntegrationTest is GovernanceTestBase {
         vm.prank(alice);
         uint256 proposalId = gov.propose(actions, "ipfs://fund-recipient");
 
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
@@ -92,7 +92,7 @@ contract IntegrationTest is GovernanceTestBase {
     function test_Defeated_WhenQuorumMetButApprovalFails() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         // 150k(For) + 100k(Against) = 250k participation (25%, above 10%
         // quorum) but only 60% For of decisive votes... exactly at the
@@ -176,7 +176,7 @@ contract IntegrationTest is GovernanceTestBase {
         // a wide margin and still clears the new 20% quorum.
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p2");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
@@ -218,7 +218,7 @@ contract IntegrationTest is GovernanceTestBase {
     ) internal returns (uint256 proposalId) {
         vm.prank(alice);
         proposalId = gov.propose(actions, "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);

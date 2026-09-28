@@ -30,7 +30,7 @@ contract GovernanceTest is GovernanceTestBase {
         assertEq(p.id, proposalId);
         assertEq(p.proposer, alice);
         assertEq(p.metadataURI, "ipfs://proposal-1");
-        assertEq(p.startBlock, block.number + defaultConfig().votingDelay);
+        assertEq(p.startBlock, vm.getBlockNumber() + defaultConfig().votingDelay);
         assertEq(p.endBlock, p.startBlock + defaultConfig().votingPeriod);
         assertFalse(p.executed);
         assertFalse(p.cancelled);
@@ -93,7 +93,7 @@ contract GovernanceTest is GovernanceTestBase {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
 
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         uint256 weight = gov.castVote(proposalId, VoteType.For);
@@ -131,7 +131,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_CastVote_RevertsOnDoubleVote() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
@@ -157,7 +157,7 @@ contract GovernanceTest is GovernanceTestBase {
 
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(carol);
         uint256 weight = gov.castVote(proposalId, VoteType.For);
@@ -167,7 +167,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_CastVoteWithReason_EmitsReasonInEvent() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.expectEmit(true, true, false, true);
         emit VoteCast(alice, proposalId, VoteType.For, 200_000 ether, "I like this");
@@ -215,7 +215,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_CancelProposal_RevertsAfterExecution() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
@@ -255,7 +255,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_QueueProposal_RevertsWhenApprovalNotMet() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         // Alice's 200k votes meet quorum (10% of 1M) but she votes Against,
         // so approval (60% For) is never met.
@@ -270,7 +270,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_QueueProposal_SucceedsAndSetsQueuedAt() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
 
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
@@ -279,14 +279,14 @@ contract GovernanceTest is GovernanceTestBase {
         gov.queueProposal(proposalId);
 
         Proposal memory p = gov.getProposal(proposalId);
-        assertEq(p.queuedAt, block.timestamp);
+        assertEq(p.queuedAt, vm.getBlockTimestamp());
         assertEq(uint8(gov.state(proposalId)), uint8(ProposalState.Queued));
     }
 
     function test_QueueProposal_RevertsIfAlreadyQueued() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
         _endVoting(proposalId);
@@ -305,7 +305,7 @@ contract GovernanceTest is GovernanceTestBase {
     ) internal returns (uint256 proposalId) {
         vm.prank(alice);
         proposalId = gov.propose(actions, "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
         _endVoting(proposalId);
@@ -331,7 +331,7 @@ contract GovernanceTest is GovernanceTestBase {
         uint256 proposalId = _proposeVoteAndQueue(_singleAction(recipient, 0, ""));
 
         vm.warp(
-            block.timestamp
+            vm.getBlockTimestamp()
                 + defaultConfig().timelockDelay
                 + defaultConfig().executionPeriod
                 + 1
@@ -453,7 +453,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_State_ActiveDuringVoting() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
         assertEq(uint8(gov.state(proposalId)), uint8(ProposalState.Active));
     }
 
@@ -490,7 +490,7 @@ contract GovernanceTest is GovernanceTestBase {
     function test_ExecutableAfter_MatchesQueuedAtPlusTimelock() public {
         vm.prank(alice);
         uint256 proposalId = gov.propose(_singleAction(recipient, 0, ""), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
         vm.prank(alice);
         gov.castVote(proposalId, VoteType.For);
         _endVoting(proposalId);

@@ -65,7 +65,7 @@ contract LiquidGovernanceTest is Test {
     function _createProposal() internal returns (uint256 id) {
         vm.prank(alice);
         id = gov.propose(_singleAction(), "ipfs://p1");
-        vm.roll(block.number + defaultConfig().votingDelay);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingDelay);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -408,7 +408,7 @@ contract LiquidGovernanceTest is Test {
         gov.castVote(id, LiquidGovernance.VoteType.For);
         gov.resolveDelegatedVote(id, bob);
 
-        vm.roll(block.number + defaultConfig().votingPeriod + 1);
+        vm.roll(vm.getBlockNumber() + defaultConfig().votingPeriod + 1);
         gov.queueProposal(id);
 
         assertEq(uint8(gov.state(id)), uint8(LiquidGovernance.ProposalState.Queued));

@@ -171,13 +171,13 @@ contract StakedGovernanceTokenTest is Test {
         staked.stake(200 ether);
         vm.stopPrank();
 
-        uint256 snapshotBlock = block.number;
-        vm.roll(block.number + 1);
+        uint256 snapshotBlock = vm.getBlockNumber();
+        vm.roll(vm.getBlockNumber() + 1);
 
         // Alice fully unstakes after the snapshot.
         vm.prank(alice);
         staked.unstake(200 ether);
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
 
         // Her voting power right now is zero...
         assertEq(staked.getVotes(alice), 0);
@@ -193,8 +193,8 @@ contract StakedGovernanceTokenTest is Test {
         staked.stake(200 ether);
         vm.stopPrank();
 
-        uint256 blockAfterFirstStake = block.number;
-        vm.roll(block.number + 1);
+        uint256 blockAfterFirstStake = vm.getBlockNumber();
+        vm.roll(vm.getBlockNumber() + 1);
 
         vm.prank(recipient);
         underlying.transfer(bob, 100 ether);
@@ -203,10 +203,10 @@ contract StakedGovernanceTokenTest is Test {
         staked.stake(100 ether);
         vm.stopPrank();
 
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
 
         assertEq(staked.getPastTotalSupply(blockAfterFirstStake), 200 ether);
-        assertEq(staked.getPastTotalSupply(block.number - 1), 300 ether);
+        assertEq(staked.getPastTotalSupply(vm.getBlockNumber() - 1), 300 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
