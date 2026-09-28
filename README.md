@@ -95,7 +95,7 @@ A DAO can put a signer council between its governance and its assets. The DAO pa
 `Treasury` has no ERC721/ERC1155 receiver hooks, so `safeTransferFrom` into it reverts — and every ERC1155 transfer is a safe one. Rather than widen the Treasury, **a DAO's NFTs live in its `NFTMarketplaceWrapper`**:
 
 - NFTs are sent to the wrapper, never to the Treasury.
-- The wrapper lists them (governance approves the marketplace order hash; the wrapper answers EIP-1271 `isValidSignature`), sends them out (`transferERC721` / `transferERC1155` — which refuse the Treasury as a recipient), or calls a marketplace directly (`execute`).
+- The wrapper lists them (governance approves the hash the marketplace checks the signature against — for Seaport that is the order's EIP-712 digest, not the raw order hash; the wrapper answers EIP-1271 `isValidSignature`), sends them out (`transferERC721` / `transferERC1155` — which refuse the Treasury as a recipient), or calls a marketplace directly (`execute`).
 - Money comes back to the Treasury: `sweepNative` and `sweepERC20` send sale proceeds there.
 - Every one of those is `onlyGovernance` — a passed proposal.
 
