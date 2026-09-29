@@ -113,14 +113,44 @@ Uses Zama's fhEVM. `FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig()
 
 ## Setup
 
+Every import in `remappings.txt` comes from one of two places: a Foundry library in `lib/` or an npm package in `node_modules/`. Versions are the ones pinned in `foundry.lock` and `package-lock.json`.
+
+| Import | Comes from | Version |
+|---|---|---|
+| `forge-std` | Foundry library (`lib/forge-std`) | v1.16.2 |
+| `@openzeppelin/contracts` | Foundry library (`lib/openzeppelin-contracts`) | v5.6.1 |
+| `@openzeppelin/contracts-upgradeable` | Foundry library (`lib/openzeppelin-contracts-upgradeable`) | v5.6.1 |
+| `forge-fhevm` | Foundry library (`lib/forge-fhevm`) | commit `3ee696f` |
+| `@fhevm/solidity` | npm | 0.13.3 |
+| `encrypted-types` | npm (also installed as a dependency of `@fhevm/solidity`) | 0.0.4 |
+| `@chainlink/contracts` | npm | 1.4.0 |
+| `@switchboard-xyz/on-demand-solidity` | npm | 1.1.0 |
+
+**Cloning this repo:** `lib/forge-std` and `lib/openzeppelin-contracts` are committed, and the other two Foundry libraries are submodules. One command gets them all, and `npm ci` installs the exact npm versions from `package-lock.json`:
+
 ```bash
 git submodule update --init --recursive
-forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.6.1 --no-commit
-npm install @switchboard-xyz/on-demand-solidity@1.1.0 @chainlink/contracts@1.4.0
-forge build --via-ir
+npm ci
+forge build
 ```
 
-`remappings.txt` must include:
+**Installing each dependency yourself** (a new project, or a missing folder):
+
+```bash
+forge install foundry-rs/forge-std@v1.16.2
+forge install OpenZeppelin/openzeppelin-contracts@v5.6.1
+forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.6.1
+forge install zama-ai/forge-fhevm@3ee696fba62a32314fde457de28cc29f1191c4cb
+
+npm install @fhevm/solidity@0.13.3
+npm install encrypted-types@0.0.4
+npm install @chainlink/contracts@1.4.0
+npm install @switchboard-xyz/on-demand-solidity@1.1.0
+```
+
+Current Foundry doesn't commit on `forge install` by default. Older guides add `--no-commit`, which newer versions reject. `via_ir` and the optimizer are set in `foundry.toml`, so plain `forge build` / `forge test` use them.
+
+`remappings.txt` (committed) maps them:
 
 ```
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
