@@ -17,7 +17,7 @@ interface IERC20Minimal {
 }
 
 /// @title OpportunityMarket
-/// @author Ark Team
+/// @author Marvin Sunday
 /// @notice A confidential opportunity-backing system: anyone can list an
 ///         opportunity, anyone can back one with a private amount, and
 ///         WHICH opportunity someone backed stays hidden too - not just
