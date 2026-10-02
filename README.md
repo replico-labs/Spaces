@@ -111,6 +111,8 @@ The constant-product AMM is a derivative of Uniswap V2 core (`github.com/Uniswap
 
 Uses Zama's fhEVM. `FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig())` resolves the coprocessor by `block.chainid` at construction — no addresses to configure — but it only supports Ethereum mainnet, Sepolia, and local Anvil. On any other chain (including Monad, Base, and HyperEVM) construction reverts with `ZamaProtocolUnsupported()`. This is why Opportunity Markets live on Sepolia.
 
+**Amounts and reward math.** Every amount is encrypted as a 64-bit integer (`euint64`), so a deposit or reward pool above 2^64 - 1 raw units is refused (`AmountTooLarge`) rather than silently truncated. That is ~18 trillion tokens for a 6-decimal stablecoin such as USDC, but only ~18.4 tokens at 18 decimals, so use a low-decimal stablecoin. `computeReward` pays `floor(stakeOnWinner × rewardPool / winningTotal)`, multiplying in 128 bits (`euint128` times the plaintext pool, then divided by the plaintext revealed total), so the product can't overflow; the result always fits back in 64 bits because a backer's stake is part of the winning total. `REWARD_MATH_VERSION()` returns 2 on this implementation. Markets cloned from the earlier implementation multiplied in 64 bits, which wrapped once stake × pool passed ~1.8e19 raw units (e.g. 5,000 USDC × 5,000 USDC paid 1,310 USDC); they keep that behaviour, since a clone's implementation never changes. Only markets from a factory deployed after this fix get the new math.
+
 ## Setup
 
 Every import in `remappings.txt` comes from one of two places: a Foundry library in `lib/` or an npm package in `node_modules/`. Versions are the ones pinned in `foundry.lock` and `package-lock.json`.
@@ -184,7 +186,7 @@ forge test --via-ir                          # default profile (Monad)
 FOUNDRY_PROFILE=size-limited forge test      # optimized, as deployed to Base / HyperEVM
 ```
 
-Current result: **539 tests passed, 0 failed, 0 skipped** across 32 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
+Current result: **545 tests passed, 0 failed, 0 skipped** across 32 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
 
 ## Deployment
 
@@ -261,6 +263,8 @@ External dependencies on Monad testnet (third-party, verified against official d
 |---|---|
 | OpportunityMarketFactory | `0xe61C9d371D3BEA6ceA5359E745593D8ebB39BEC5` |
 | OpportunityMarket implementation | `0xc708729e349ED5F7dDB459Ec1d68b6163125EfE6` |
+
+These are the pre-fix deployment (64-bit reward math, see [Opportunity Markets](#opportunity-markets)). Redeploy with `DeployOpportunityMarketFactory.s.sol` and point the bot's `OPPORTUNITY_MARKET_FACTORY_ADDRESS` at the new factory so new markets get the 128-bit math.
 
 ### Base, HyperEVM and Monad mainnet — not yet deployed
 

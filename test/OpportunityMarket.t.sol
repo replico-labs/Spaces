@@ -529,4 +529,117 @@ contract OpportunityMarketTest is FhevmTest {
 
         assertEq(market.winningTotalBacking(), 750); // 300 + 450
     }
+
+    /*//////////////////////////////////////////////////////////////
+        REWARD MATH AT REAL STABLECOIN SIZES (6 decimals)
+    //////////////////////////////////////////////////////////////*/
+
+    /// Backs opportunity 1 for each (account, amount), funds `pool`,
+    /// resolves to 1 and reveals the winning total.
+    function _resolveWithBets(address[] memory accounts, uint64[] memory amounts, uint256 pool) internal {
+        vm.prank(alice);
+        market.listOpportunity("ipfs://opp1");
+        for (uint256 i = 0; i < accounts.length; i++) {
+            token.mint(accounts[i], amounts[i]);
+            _deposit(accounts[i], amounts[i]);
+            (externalEuint32 t, bytes memory tp) = encryptUint32(1, accounts[i], address(market));
+            (externalEuint64 a, bytes memory ap) = encryptUint64(amounts[i], accounts[i], address(market));
+            vm.prank(accounts[i]);
+            market.back(t, tp, a, ap);
+        }
+        token.mint(deployer, pool);
+        vm.startPrank(deployer);
+        token.approve(address(market), pool);
+        market.fundRewardPool(pool);
+        market.resolve(1);
+        vm.stopPrank();
+
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = market.finalizeWinningTotal();
+        (uint256[] memory cleartexts, bytes memory proof) = publicDecrypt(handles);
+        market.completeWinningTotalReveal(abi.encodePacked(cleartexts), proof);
+    }
+
+    function _withdrawReward(address account) internal returns (uint256 paid) {
+        vm.prank(account);
+        market.computeReward();
+        vm.prank(account);
+        bytes32 handle = market.requestRewardWithdrawal();
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = handle;
+        (uint256[] memory cleartexts, bytes memory proof) = publicDecrypt(handles);
+        uint256 before = token.balanceOf(account);
+        market.completeWithdrawal(handle, abi.encodePacked(cleartexts), proof);
+        return token.balanceOf(account) - before;
+    }
+
+    /// 5,000 USDC staked x a 5,000 USDC pool = 2.5e19 raw, past 2^64
+    /// (~1.8e19): the old 64-bit multiply wrapped and paid ~6.55 billion
+    /// raw units short. The 128-bit multiply pays the whole pool.
+    function test_Reward_NoOverflowAtStablecoinScale() public {
+        address[] memory who = new address[](1);
+        who[0] = alice;
+        uint64[] memory amts = new uint64[](1);
+        amts[0] = 5_000e6;
+        _resolveWithBets(who, amts, 5_000e6);
+        assertGt(uint256(5_000e6) * 5_000e6, type(uint64).max); // the old math would have wrapped
+        assertEq(_withdrawReward(alice), 5_000e6);
+    }
+
+    /// Uneven split with large amounts: 3M and 1M USDC on the winner, a
+    /// 4M pool -> 3M and 1M (products ~1.2e25 and 4e24, far past 2^64).
+    function test_Reward_ProportionalSplitAtLargeAmounts() public {
+        address[] memory who = new address[](2);
+        who[0] = alice;
+        who[1] = bob;
+        uint64[] memory amts = new uint64[](2);
+        amts[0] = 3_000_000e6;
+        amts[1] = 1_000_000e6;
+        _resolveWithBets(who, amts, 4_000_000e6);
+        assertEq(market.winningTotalBacking(), 4_000_000e6);
+        assertEq(_withdrawReward(alice), 3_000_000e6);
+        assertEq(_withdrawReward(bob), 1_000_000e6);
+    }
+
+    /// Rounds down, like plaintext integer division: 1/3 of 100 each.
+    function test_Reward_RoundsDown() public {
+        address carol = makeAddr("carol");
+        address[] memory who = new address[](3);
+        who[0] = alice;
+        who[1] = bob;
+        who[2] = carol;
+        uint64[] memory amts = new uint64[](3);
+        amts[0] = 7e6;
+        amts[1] = 7e6;
+        amts[2] = 7e6;
+        _resolveWithBets(who, amts, 100);
+        assertEq(_withdrawReward(alice), 33);
+        assertEq(_withdrawReward(carol), 33);
+    }
+
+    function test_RewardMathVersion() public view {
+        assertEq(market.REWARD_MATH_VERSION(), 2);
+    }
+
+    /// Above 2^64 - 1 raw units an amount can't be represented
+    /// encrypted - refused instead of silently truncated.
+    function test_Deposit_RevertsAboveUint64() public {
+        uint256 tooBig = uint256(type(uint64).max) + 1;
+        token.mint(alice, tooBig);
+        vm.startPrank(alice);
+        token.approve(address(market), tooBig);
+        vm.expectRevert(OpportunityMarket.AmountTooLarge.selector);
+        market.deposit(tooBig);
+        vm.stopPrank();
+    }
+
+    function test_FundRewardPool_RevertsAboveUint64() public {
+        uint256 tooBig = uint256(type(uint64).max) + 1;
+        token.mint(deployer, tooBig);
+        vm.startPrank(deployer);
+        token.approve(address(market), tooBig);
+        vm.expectRevert(OpportunityMarket.AmountTooLarge.selector);
+        market.fundRewardPool(tooBig);
+        vm.stopPrank();
+    }
 }

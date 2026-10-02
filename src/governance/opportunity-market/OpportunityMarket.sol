@@ -5,6 +5,7 @@ import {
     FHE,
     euint32,
     euint64,
+    euint128,
     ebool,
     externalEuint32,
     externalEuint64
@@ -68,19 +69,21 @@ interface IERC20Minimal {
 ///      finalization (see finalizeWinningTotal) - individual positions
 ///      still never are.
 ///
-///      PAYOUT MATH AND OVERFLOW: encrypted-by-encrypted division isn't
-///      supported by this library at all (only dividing an encrypted
-///      value by a known plaintext constant is). The payout is computed
-///      as (qualifyingStake * rewardPool) / winningTotalBacking - an
-///      encrypted*encrypted multiply (supported), followed by an
-///      encrypted/plaintext divide (supported), once winningTotalBacking
-///      has been verified-revealed. The multiply happens BEFORE the
-///      divide brings the value back down, so if stake amounts and the
-///      reward pool aren't kept to a sane range relative to euint64's
-///      max, the intermediate product can overflow before division
-///      rescues it. This is a real, disclosed numerical constraint, not
-///      a solved one - keep amounts modest relative to token decimals
-///      until this has been properly stress-tested.
+///      PAYOUT MATH: encrypted-by-encrypted division isn't supported by
+///      this library (only dividing an encrypted value by a known
+///      plaintext constant is). The payout is
+///      (qualifyingStake * rewardPool) / winningTotalBacking, where
+///      rewardPool is public and winningTotalBacking has been
+///      verified-revealed, so both are plaintext. The multiply is done in
+///      128 bits (euint128 times a plaintext scalar), so it can't
+///      overflow: both factors fit in 64 bits. The result fits back in
+///      64 bits because a backer's qualifying stake is part of the
+///      winning total, so the reward is at most rewardPool. Deposits and
+///      the reward pool are refused above 2^64 - 1 raw units rather than
+///      truncated. With an 18-decimal token that is ~18.4 tokens, so use
+///      a token with few decimals (a 6-decimal stablecoin allows ~18
+///      trillion). REWARD_MATH_VERSION lets off-chain code tell this
+///      apart from the earlier 64-bit multiply, which wrapped.
 ///
 ///      SCALING: finalizeWinningTotal iterates over every bettor and
 ///      every one of their bets in a single, unbatched loop. Fine for
@@ -89,6 +92,10 @@ interface IERC20Minimal {
 ///      before it could be trusted not to exceed gas or the protocol's
 ///      HCU (homomorphic compute unit) budget in one transaction.
 contract OpportunityMarket {
+    /// @notice 2: the reward is computed in 128 bits (see PAYOUT MATH).
+    ///         Markets cloned from earlier implementations don't have this.
+    uint256 public constant REWARD_MATH_VERSION = 2;
+
     struct Opportunity {
         address lister;
         string metadataURI;
@@ -186,6 +193,7 @@ contract OpportunityMarket {
     error RewardAlreadyComputed();
     error AlreadyCancelled();
     error CannotCancelAfterResolution();
+    error AmountTooLarge();
 
     modifier onlyDeployer() {
         if (msg.sender != deployer) revert OnlyDeployer();
@@ -215,6 +223,7 @@ contract OpportunityMarket {
     function fundRewardPool(uint256 amount) external onlyDeployer {
         if (rewardPoolFunded) revert RewardPoolAlreadyFunded();
         if (amount == 0) revert ZeroAmount();
+        if (amount > type(uint64).max) revert AmountTooLarge();
         rewardPoolFunded = true;
         rewardPool = amount;
 
@@ -335,6 +344,7 @@ contract OpportunityMarket {
 
     function deposit(uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
+        if (amount > type(uint64).max) revert AmountTooLarge();
 
         bool ok = IERC20Minimal(underlyingToken).transferFrom(msg.sender, address(this), amount);
         if (!ok) revert TransferFailed();
@@ -513,11 +523,21 @@ contract OpportunityMarket {
         rewardComputed[msg.sender] = true;
 
         euint64 qualifying = _qualifyingStake(msg.sender);
-        euint64 rewardPoolEncrypted = FHE.asEuint64(uint64(rewardPool));
-        FHE.allowThis(rewardPoolEncrypted);
-        euint64 numerator = FHE.mul(qualifying, rewardPoolEncrypted);
-        FHE.allowThis(numerator);
-        euint64 reward = winningTotalBacking == 0 ? FHE.asEuint64(0) : FHE.div(numerator, uint64(winningTotalBacking));
+        euint64 reward;
+        if (winningTotalBacking == 0 || rewardPool == 0) {
+            reward = FHE.asEuint64(0);
+        } else {
+            // 128-bit multiply: stake and pool are each < 2^64, so the
+            // product can't overflow. qualifying <= winningTotalBacking,
+            // so the quotient is <= rewardPool and fits back in 64 bits.
+            euint128 wideStake = FHE.asEuint128(qualifying);
+            FHE.allowThis(wideStake);
+            euint128 numerator = FHE.mul(wideStake, uint128(rewardPool));
+            FHE.allowThis(numerator);
+            euint128 quotient = FHE.div(numerator, uint128(winningTotalBacking));
+            FHE.allowThis(quotient);
+            reward = FHE.asEuint64(quotient);
+        }
 
         FHE.allowThis(reward);
         FHE.allow(reward, msg.sender);
