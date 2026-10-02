@@ -242,12 +242,12 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 | OptimisticDAOFactory | `0x8F5a20c910aEbF287790e04799Ce0DB677705674` |
 | DelegateDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
 | BoardDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
-| SortitionDAOFactory | `0xBeB038379CD821811ab097308fABF89BcA4bBA7B` |
+| SortitionDAOFactory | `0x251b2371e2E98b5db9A2ceF3B687dF1A93BD24E6` |
 | ConvictionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
 | SowellianDAOFactory | `0x075289669Ab8601dd8b15D95551644D511949056` |
 | DecisionMarketsDAOFactory | `0x99DeC80E792f9C1fA92F46fe08c6763CBCCfE388` |
-| PythEntropyRandomnessAdapter (Sortition) | not yet deployed |
-| PythPriceFeedAdapter (Sowellian) | not yet deployed |
+| PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
+| PythPriceFeedAdapter (Sowellian) | `0x6C582533290855Af7F95d4484A6bb2e8C317949e` |
 
 The Switchboard adapters deployed earlier no longer work (Switchboard shut down). This `SortitionDAOFactory` clones the earlier Sortition implementation, whose `startSortition` isn't payable: its DAOs draw through the Entropy adapter from prefunded credit (`fund(governance)`), and switch to it with a `setRandomnessSource` proposal. Redeploy the factory for new DAOs to get the payable `startSortition` and the stuck-round reset. An existing DAO whose round is already waiting on Switchboard stays stuck (its `setRandomnessSource` predates the reset); its council keeps serving, but it can't draw again.
 
@@ -257,8 +257,8 @@ External dependencies on Monad testnet (third-party, verified against official d
 | Dependency | Address | Source |
 |---|---|---|
 | WMON (canonical) | `0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541` | docs.monad.xyz — Canonical Contracts |
-| Pyth Entropy | from docs.pyth.network/entropy/contract-addresses | Pyth docs |
-| Pyth price feeds | from docs.pyth.network/price-feeds/contract-addresses/evm | Pyth docs |
+| Pyth Entropy | `0x825c0390f379C631f3Cf11A82a37D20BddF93c07` | Pyth docs |
+| Pyth price feeds | `0xFC6bd9F9f0c6481c6Af3A7Eb46b296A5B85ed379` | Pyth docs |
 
 
 ### Ethereum Sepolia (Opportunity Markets)
