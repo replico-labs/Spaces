@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {SortitionGovernance} from "../src/governance/sortition/SortitionGovernance.sol";
 import {IRandomnessSource} from "../src/randomness/IRandomnessSource.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {PythEntropyRandomnessAdapter} from "../src/randomness/PythEntropyRandomnessAdapter.sol";
+import {FeeEntropy} from "./PythAdapters.t.sol";
 
 /// @dev Minimal mock randomness source - lets these tests control exactly
 ///      what "random" value gets returned, so the draw logic itself can be
@@ -272,6 +274,80 @@ contract SortitionGovernanceTest is Test {
 
         vm.expectRevert(SortitionGovernance.SortitionAlreadyActive.selector);
         gov.startSortition();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                PYTH ENTROPY AS THE RANDOMNESS SOURCE
+    //////////////////////////////////////////////////////////////*/
+
+    event SortitionRoundAbandoned(uint256 indexed round);
+
+    function _useEntropy() internal returns (FeeEntropy entropy, PythEntropyRandomnessAdapter adapter) {
+        entropy = new FeeEntropy();
+        adapter = new PythEntropyRandomnessAdapter(address(entropy), 0);
+        vm.prank(address(gov)); // onlyGovernance: as if through a passed proposal
+        gov.setRandomnessSource(address(adapter));
+    }
+
+    function test_StartSortition_ForwardsFeeToPythEntropy() public {
+        (FeeEntropy entropy, PythEntropyRandomnessAdapter adapter) = _useEntropy();
+        _registerPool();
+        vm.warp(gov.currentTermEnd());
+        uint256 fee = adapter.requestFee();
+        uint256 round = gov.startSortition{value: fee}();
+        assertEq(address(entropy).balance, fee);
+
+        bytes32 requestId = gov.requestIdOfRound(round);
+        entropy.reveal(adapter.sequenceOf(requestId), bytes32(uint256(12345)));
+        gov.finalizeSortition();
+        assertEq(gov.getCouncil().length, 3);
+    }
+
+    function test_StartSortition_WithoutFee_Reverts() public {
+        (, PythEntropyRandomnessAdapter adapter) = _useEntropy();
+        _registerPool();
+        vm.warp(gov.currentTermEnd());
+        vm.expectRevert(abi.encodeWithSelector(PythEntropyRandomnessAdapter.InsufficientFunds.selector, adapter.requestFee(), 0));
+        gov.startSortition();
+    }
+
+    /// A DAO cloned before startSortition was payable can still draw:
+    /// its governance contract's credit is funded in advance.
+    function test_StartSortition_PaidFromPrefundedCredit() public {
+        (FeeEntropy entropy, PythEntropyRandomnessAdapter adapter) = _useEntropy();
+        adapter.fund{value: 1 ether}(address(gov));
+        _registerPool();
+        vm.warp(gov.currentTermEnd());
+        uint256 round = gov.startSortition();
+        assertEq(adapter.credit(address(gov)), 1 ether - adapter.requestFee());
+        entropy.reveal(adapter.sequenceOf(gov.requestIdOfRound(round)), bytes32(uint256(9)));
+        gov.finalizeSortition();
+        assertEq(gov.getCouncil().length, 3);
+    }
+
+    /// The Switchboard case: a round waiting on a provider that will never
+    /// answer. Switching the source abandons it, so the DAO isn't stuck.
+    function test_SetRandomnessSource_AbandonsStuckRound() public {
+        _registerPool();
+        vm.warp(gov.currentTermEnd());
+        uint256 stuck = gov.startSortition(); // the mock never fulfills it
+
+        FeeEntropy entropy = new FeeEntropy();
+        PythEntropyRandomnessAdapter adapter = new PythEntropyRandomnessAdapter(address(entropy), 0);
+        vm.expectEmit(true, false, false, false, address(gov));
+        emit SortitionRoundAbandoned(stuck);
+        vm.prank(address(gov));
+        gov.setRandomnessSource(address(adapter));
+
+        vm.expectRevert(SortitionGovernance.NoActiveSortitionRound.selector);
+        gov.finalizeSortition();
+
+        vm.warp(block.timestamp + 1); // a fresh request ID
+        uint256 round = gov.startSortition{value: adapter.requestFee()}();
+        assertEq(round, stuck + 1);
+        entropy.reveal(adapter.sequenceOf(gov.requestIdOfRound(round)), bytes32(uint256(77)));
+        gov.finalizeSortition();
+        assertEq(gov.getCouncil().length, 3);
     }
 
     /*//////////////////////////////////////////////////////////////

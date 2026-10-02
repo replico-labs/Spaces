@@ -75,16 +75,17 @@ Plus **Opportunity Markets** — confidential, FHE-encrypted backing of listed o
 | `distribution/WelcomeDistributor.sol` | Optional capped welcome-token distribution, one claim per address |
 | `wrapper/GuardWrapper.sol` | Optional security council: governance proposes an instruction, a signer threshold confirms it before it is forwarded. Signers can never initiate anything |
 | `marketplace/NFTMarketplaceWrapper.sol` | Optional EIP-1271 signer for NFT marketplaces — and where a DAO's NFTs live (see [NFTs](#nfts)) |
-| `randomness/` | `IRandomnessSource` + Switchboard and Chainlink adapters (used by Sortition) |
-| `oracles/` | Switchboard and Chainlink price-feed adapters behind `IMetricOracle` (used by Sowellian) |
+| `randomness/` | `IRandomnessSource` + `PythEntropyRandomnessAdapter` (used by Sortition) |
+| `oracles/` | `PythPriceFeedAdapter` behind `IMetricOracle` (used by Sowellian) |
 
 ## Key design decisions
 
 - **Governance and treasury are decoupled.** A DAO can vote to move to a different model via `transferGovernance()` without funds moving.
 - **Voting power requires staking, not just holding**, in every token-based model.
 - **Snapshot-based, flash-loan-resistant voting** wherever a discrete vote happens. Where a model has no single voting moment (Conviction), committed tokens are locked instead.
-- **Randomness and price data are provider-agnostic.** Sortition and Sowellian depend only on small interfaces; which oracle network sits behind them is a per-deployment choice.
-- **One oracle adapter, many feeds.** `IMetricOracle.latestValue(bytes32 selector)` takes a per-proposal selector stored on each Sowellian proposal. `SwitchboardPriceFeedAdapter` treats it as the Switchboard `feedId`, so one deployment serves every feed. `ChainlinkPriceFeedAdapter` ignores it and stays bound to one feed via its constructor — that matches how Chainlink works (each feed is its own contract), so Chainlink needs one adapter per feed.
+- **Randomness and price data are provider-agnostic.** Sortition and Sowellian depend only on small interfaces; which oracle network sits behind them is a per-deployment choice. Pyth provides both on every supported chain: Entropy for randomness, Pyth price feeds for Sowellian. (The Switchboard and Chainlink adapters were removed when Switchboard shut down.)
+- **One oracle adapter, many feeds.** `IMetricOracle.latestValue(bytes32 selector)` takes a per-proposal selector stored on each Sowellian proposal. `PythPriceFeedAdapter` treats it as the Pyth price feed ID, so one deployment per network serves every feed. It returns prices as 18-decimal fixed point whatever the feed's exponent, so a proposal's `targetValue` is always price × 1e18 ($3,000 → `3000e18`).
+- **Sortition pays for its randomness.** Pyth Entropy charges a small native fee per request. `startSortition` is payable and forwards what it's sent; the adapter (`requestFee()`) takes the fee from that plus any credit the DAO holds there, and keeps the rest as the DAO's credit. Anyone can top up a DAO's credit with `fund(governance)`, which is how Sortition DAOs cloned before `startSortition` was payable still draw. `setRandomnessSource` abandons a round still waiting on the old provider, so a DAO is never stuck behind randomness that will never arrive.
 
 ## Security council (GuardWrapper)
 
@@ -125,8 +126,8 @@ Every import in `remappings.txt` comes from one of two places: a Foundry library
 | `forge-fhevm` | Foundry library (`lib/forge-fhevm`) | commit `3ee696f` |
 | `@fhevm/solidity` | npm | 0.13.3 |
 | `encrypted-types` | npm (also installed as a dependency of `@fhevm/solidity`) | 0.0.4 |
-| `@chainlink/contracts` | npm | 1.4.0 |
-| `@switchboard-xyz/on-demand-solidity` | npm | 1.1.0 |
+| `@pythnetwork/pyth-sdk-solidity` | npm | 4.3.1 |
+| `@pythnetwork/entropy-sdk-solidity` | npm | 2.2.1 |
 
 **Cloning this repo:** `lib/forge-std` and `lib/openzeppelin-contracts` are committed, and the other two Foundry libraries are submodules. One command gets them all, and `npm ci` installs the exact npm versions from `package-lock.json`:
 
@@ -146,8 +147,8 @@ forge install zama-ai/forge-fhevm@3ee696fba62a32314fde457de28cc29f1191c4cb
 
 npm install @fhevm/solidity@0.13.3
 npm install encrypted-types@0.0.4
-npm install @chainlink/contracts@1.4.0
-npm install @switchboard-xyz/on-demand-solidity@1.1.0
+npm install @pythnetwork/pyth-sdk-solidity@4.3.1
+npm install @pythnetwork/entropy-sdk-solidity@2.2.1
 ```
 
 Current Foundry doesn't commit on `forge install` by default. Older guides add `--no-commit`, which newer versions reject. `via_ir` and the optimizer are set in `foundry.toml`, so plain `forge build` / `forge test` use them.
@@ -157,8 +158,8 @@ Current Foundry doesn't commit on `forge install` by default. Older guides add `
 ```
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
-@switchboard-xyz/on-demand-solidity/=node_modules/@switchboard-xyz/on-demand-solidity/
-@chainlink/contracts/=node_modules/@chainlink/contracts/
+@pythnetwork/pyth-sdk-solidity/=node_modules/@pythnetwork/pyth-sdk-solidity/
+@pythnetwork/entropy-sdk-solidity/=node_modules/@pythnetwork/entropy-sdk-solidity/
 @fhevm/solidity/=node_modules/@fhevm/solidity/
 encrypted-types/=node_modules/encrypted-types/
 forge-fhevm/=lib/forge-fhevm/src/
@@ -186,7 +187,7 @@ forge test --via-ir                          # default profile (Monad)
 FOUNDRY_PROFILE=size-limited forge test      # optimized, as deployed to Base / HyperEVM
 ```
 
-Current result: **545 tests passed, 0 failed, 0 skipped** across 32 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
+Current result: **564 tests passed, 0 failed, 0 skipped** across 34 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
 
 ## Deployment
 
@@ -209,19 +210,19 @@ On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min,
 
 `GuardWrapper` and `NFTMarketplaceWrapper` have no deploy scripts: they are per-DAO and the bot deploys them on demand (`/deployguardwrapper`, `/deploynftwrapper`).
 
-Oracle and randomness adapters are standalone, one-time deployments:
+Oracle and randomness adapters are standalone, one-time deployments per network. Each takes Pyth's own contract address, copied from Pyth's docs, and its constructor rejects an address that isn't one:
 
 ```bash
-# Randomness for Sortition (second arg: minimum settlement delay, seconds)
-forge create src/randomness/SwitchboardRandomnessAdapter.sol:SwitchboardRandomnessAdapter \
-  --rpc-url <RPC_URL> --private-key $PRIVATE_KEY --broadcast \
-  --constructor-args <SWITCHBOARD_PROXY> 60
+# Randomness for Sortition - PYTH_ENTROPY_ADDRESS from docs.pyth.network/entropy/contract-addresses
+PYTH_ENTROPY_ADDRESS=0x... forge script script/DeployPythEntropyAdapter.s.sol:DeployPythEntropyAdapter \
+  --rpc-url <RPC_URL> --account <ACCOUNT> --broadcast
 
-# Price feeds for Sowellian — one deployment serves every Switchboard feed
-forge create src/oracles/SwitchboardPriceFeedAdapter.sol:SwitchboardPriceFeedAdapter \
-  --rpc-url <RPC_URL> --private-key $PRIVATE_KEY --broadcast \
-  --constructor-args <SWITCHBOARD_PROXY>
+# Price feeds for Sowellian - PYTH_ADDRESS from docs.pyth.network/price-feeds/contract-addresses/evm
+PYTH_ADDRESS=0x... forge script script/DeployPythPriceFeedAdapter.s.sol:DeployPythPriceFeedAdapter \
+  --rpc-url <RPC_URL> --account <ACCOUNT> --broadcast
 ```
+
+Pyth prices are pull-based: post a signed update from Pyth's Hermes service to the Pyth contract (`updatePriceFeeds`, plus its small fee) right before `resolveViaOracle`; the bot does this for you. Entropy calls the adapter back by itself, usually within seconds, so Sortition needs no settlement keeper - just `finalizeSortition` once it's fulfilled.
 
 DAOs are created from a deployed factory with the matching `Create<Model>DAO.s.sol` script (see each script's header for its env vars — e.g. `INITIAL_SIGNERS` for Board, `INITIAL_COUNCIL` for Delegate and Sortition, `RANDOMNESS_SOURCE` for Sortition), or through the bot's `/createdao`.
 
@@ -245,8 +246,10 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 | ConvictionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
 | SowellianDAOFactory | `0x075289669Ab8601dd8b15D95551644D511949056` |
 | DecisionMarketsDAOFactory | `0x99DeC80E792f9C1fA92F46fe08c6763CBCCfE388` |
-| SwitchboardRandomnessAdapter (Sortition) | `0x2Ae2019Ac0e642C6bB9eBabD6F2c06bFFf4B2D1E` |
-| SwitchboardPriceFeedAdapter (Sowellian) | `0x4DBe57b8ed392a71C87f1ABCda299036A54F2e14` |
+| PythEntropyRandomnessAdapter (Sortition) | not yet deployed |
+| PythPriceFeedAdapter (Sowellian) | not yet deployed |
+
+The Switchboard adapters deployed earlier no longer work (Switchboard shut down). This `SortitionDAOFactory` clones the earlier Sortition implementation, whose `startSortition` isn't payable: its DAOs draw through the Entropy adapter from prefunded credit (`fund(governance)`), and switch to it with a `setRandomnessSource` proposal. Redeploy the factory for new DAOs to get the payable `startSortition` and the stuck-round reset. An existing DAO whose round is already waiting on Switchboard stays stuck (its `setRandomnessSource` predates the reset); its council keeps serving, but it can't draw again.
 
 
 External dependencies on Monad testnet (third-party, verified against official docs):
@@ -254,15 +257,16 @@ External dependencies on Monad testnet (third-party, verified against official d
 | Dependency | Address | Source |
 |---|---|---|
 | WMON (canonical) | `0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541` | docs.monad.xyz — Canonical Contracts |
-| Switchboard proxy (feeds + randomness) | `0x6724818814927e057a693f4e3A172b6cC1eA690C` | docs.switchboard.xyz — Monad |
+| Pyth Entropy | from docs.pyth.network/entropy/contract-addresses | Pyth docs |
+| Pyth price feeds | from docs.pyth.network/price-feeds/contract-addresses/evm | Pyth docs |
 
 
 ### Ethereum Sepolia (Opportunity Markets)
 
 | Contract | Address |
 |---|---|
-| OpportunityMarketFactory | `0xe61C9d371D3BEA6ceA5359E745593D8ebB39BEC5` |
-| OpportunityMarket implementation | `0xc708729e349ED5F7dDB459Ec1d68b6163125EfE6` |
+| OpportunityMarketFactory | `0xB5E3586fFe76151035CD1dd1d2Cc75366A202D95` |
+| OpportunityMarket implementation | `0xF154CDEd01612Abb3200C2CDEE81F81d4268266a` |
 
 These are the pre-fix deployment (64-bit reward math, see [Opportunity Markets](#opportunity-markets)). Redeploy with `DeployOpportunityMarketFactory.s.sol` and point the bot's `OPPORTUNITY_MARKET_FACTORY_ADDRESS` at the new factory so new markets get the 128-bit math.
 
@@ -295,12 +299,13 @@ Chain IDs and RPCs are from viem's chain definitions. For each network, fill in:
 | Randomness adapter (Sortition) | |
 | Price-feed adapter (Sowellian) | |
 
-Before deploying to any of them, verify against the chain's own docs: the canonical wrapped native token (`WMON_ADDRESS` for Decision Markets — WETH on Base, WHYPE on HyperEVM); whether Switchboard and/or Chainlink run randomness and price feeds there, and their real addresses. Opportunity Markets cannot deploy on any of them (see above).
+Before deploying to any of them, verify against the chain's own docs: the canonical wrapped native token (`WMON_ADDRESS` for Decision Markets — WETH on Base, WHYPE on HyperEVM); Pyth's Entropy and price feed contract addresses on that chain, from Pyth's docs. Opportunity Markets cannot deploy on any of them (see above).
 
 ## Known gaps
 
 - **No audit.** Sowellian, Decision Markets, and Opportunity Markets move real capital based on market or oracle resolution — test adversarially before real funds touch them.
-- **Keepers are required for Switchboard.** Both randomness and price feeds are pull-based; someone must submit settlement or feed updates. The bot ships both: a sortition keeper and a price-feed keeper for Sowellian's oracle track (one process per network).
-- **Proposals are calldata.** The contracts take raw target/value/calldata. The bot's verified action library covers every native admin function (`/proposeaction`); external protocol actions (DEXs, lending, staking, marketplaces) are not built yet.
+- **Pyth fees.** Each Sortition draw pays an Entropy fee, and each oracle resolution pays a Pyth price-update fee, both in the chain's native currency. Pyth sets and can change them; read `requestFee()` / `getUpdateFee` rather than hard-coding.
+- **Entropy's trust model.** The adapter uses `requestV2()`, where Entropy generates the user's share of the randomness in-contract, so a colluding validator and Entropy provider could bias a draw (Pyth's documented trade-off for that variant).
+- **Proposals are calldata.** The contracts take raw target/value/calldata. The bot's verified action library (`/proposeaction`) covers every native admin function and the external protocol actions (DEXs, lending, staking, marketplaces) on each network.
 - **Resolver incentives.** A correct Sowellian resolver gets their bond back, not an additional reward.
 - **Rounding dust.** Pari-mutuel payouts round down; tiny residual balances are recoverable by an ordinary governance proposal.

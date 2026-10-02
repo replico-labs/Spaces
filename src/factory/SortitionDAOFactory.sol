@@ -14,10 +14,9 @@ import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 ///         wrapper, treasury, and SortitionGovernance contract for a new
 ///         DAO. Unlike every other factory in this system, this one
 ///         cannot self-contain everything it needs: SortitionGovernance
-///         requires a real, already-deployed randomness source (a
-///         SwitchboardRandomnessAdapter, a ChainlinkRandomnessAdapter, or
-///         any other IRandomnessSource implementation configured for
-///         this chain), which the caller must supply per-DAO, at
+///         requires a real, already-deployed randomness source (the
+///         chain's PythEntropyRandomnessAdapter, or any other
+///         IRandomnessSource implementation configured for this chain), which the caller must supply per-DAO, at
 ///         createDAO() time - not something this factory's own
 ///         constructor should default or guess at.
 /// @dev Clone-based - see QuadraticDAOFactory's own notes for why.

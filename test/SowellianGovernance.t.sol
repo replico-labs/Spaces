@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {SowellianGovernance} from "../src/governance/sowellian/SowellianGovernance.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {MockPyth} from "@pythnetwork/pyth-sdk-solidity/MockPyth.sol";
+import {PythPriceFeedAdapter} from "../src/oracles/PythPriceFeedAdapter.sol";
 
 /// @dev Minimal mock of a StakedGovernanceToken - voting power reads plus
 ///      real transfer/transferFrom semantics, since this contract moves
@@ -191,6 +193,38 @@ contract SowellianGovernanceTest is Test {
         vm.prank(bob);
         vm.expectRevert(SowellianGovernance.NothingToClaim.selector);
         gov.claimPosition(id); // bob was on the losing side
+    }
+
+    /// The real adapter path: a Pyth feed (expo -8) resolves a proposal
+    /// whose target is in 18 decimals, with a price update posted to Pyth
+    /// right before resolution (Pyth is pull-based).
+    function test_OracleTrack_ResolvesAgainstPythPriceFeed() public {
+        MockPyth pyth = new MockPyth(60, 1 wei);
+        PythPriceFeedAdapter adapter = new PythPriceFeedAdapter(address(pyth));
+        bytes32 ethUsd = keccak256("ETH/USD");
+
+        vm.prank(proposer);
+        uint256 id = gov.propose(
+            _singleAction(),
+            "ipfs://pyth",
+            SowellianGovernance.ResolutionMethod.Oracle,
+            address(adapter),
+            ethUsd, // oracleSelector = the Pyth price feed ID
+            3_000e18, // success if ETH/USD >= $3,000
+            true,
+            30 days
+        );
+        _approveProposal(id);
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().positionsWindow + 1);
+        gov.executeProposal(id);
+        vm.warp(gov.getProposal(id).measurementDeadline + 1);
+
+        bytes[] memory updates = new bytes[](1);
+        updates[0] = pyth.createPriceFeedUpdateData(ethUsd, 312_345_000_000, 10, -8, 312_345_000_000, 10, uint64(block.timestamp), uint64(block.timestamp - 1));
+        pyth.updatePriceFeeds{value: pyth.getUpdateFee(updates)}(updates);
+
+        gov.resolveViaOracle(id); // $3,123.45 >= $3,000
+        assertEq(uint8(gov.getProposal(id).finalOutcome), uint8(SowellianGovernance.Outcome.Success));
     }
 
     function test_OracleTrack_FailureOutcome_NoPayoutToYes() public {

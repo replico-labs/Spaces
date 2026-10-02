@@ -8,8 +8,8 @@ import {SortitionGovernance} from "../src/governance/sortition/SortitionGovernan
 /// @title CreateSortitionDAO
 /// @notice Calls `createDAO` on an already-deployed SortitionDAOFactory.
 ///         RANDOMNESS_SOURCE must point at a real, already-deployed
-///         IRandomnessSource implementation (a SwitchboardRandomnessAdapter,
-///         a ChainlinkRandomnessAdapter, or similar) genuinely configured
+///         IRandomnessSource implementation (the chain's
+///         PythEntropyRandomnessAdapter, from DeployPythEntropyAdapter) configured
 ///         for the target chain - there is no sensible default for this,
 ///         and the factory deliberately does not supply one itself.
 ///         councilSize is derived automatically from the initial

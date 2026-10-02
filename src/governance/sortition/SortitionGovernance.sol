@@ -21,15 +21,14 @@ interface IBalanceToken {
 ///         DelegateGovernance - the only thing sortition changes is HOW
 ///         the council gets chosen, not how it governs once chosen.
 /// @dev Depends only on IRandomnessSource, not any specific oracle -
-///      Chainlink and Switchboard adapters both satisfy it, swappable via
-///      `setRandomnessSource`. Genuine on-chain randomness (not block-hash
-///      manipulation) requires an external randomness provider, which
-///      means sortition rounds are inherently asynchronous: start a
-///      round, wait for the randomness request to be fulfilled, then
-///      finalize it as a separate transaction. See IRandomnessSource's own
-///      adapters for provider-specific timing (Switchboard needs an
-///      off-chain keeper to settle; Chainlink resolves via automatic
-///      callback).
+///      PythEntropyRandomnessAdapter satisfies it, and any other provider
+///      can be swapped in via `setRandomnessSource`. Genuine on-chain
+///      randomness (not block-hash manipulation) requires an external
+///      randomness provider, which means sortition rounds are inherently
+///      asynchronous: start a round (paying the provider's fee), wait for
+///      the randomness request to be fulfilled (Pyth Entropy calls back
+///      by itself, usually within seconds), then finalize it as a
+///      separate transaction.
 ///
 ///      Eligibility is opt-in, not automatic for all holders - standard
 ///      ERC20/ERC20Votes provides no enumerable holder list, so there is
@@ -152,6 +151,7 @@ contract SortitionGovernance is Initializable {
     event GovernanceTokenUpdated(address indexed previousToken, address indexed newToken);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event RandomnessSourceUpdated(address indexed previousSource, address indexed newSource);
+    event SortitionRoundAbandoned(uint256 indexed round);
 
     /*//////////////////////////////////////////////////////////////
                                 STATE
@@ -293,8 +293,10 @@ contract SortitionGovernance is Initializable {
 
     /// @notice Starts a new sortition round: requests randomness for the
     ///         next council draw. Callable by anyone once the current term
-    ///         has ended.
-    function startSortition() external returns (uint256 round) {
+    ///         has ended. Any native currency sent is forwarded to the
+    ///         randomness source to pay its fee (Pyth Entropy charges one
+    ///         per request; see PythEntropyRandomnessAdapter.requestFee).
+    function startSortition() external payable returns (uint256 round) {
         if (block.timestamp < currentTermEnd) revert TooEarlyForSortition();
         if (_roundActive) revert SortitionAlreadyActive();
         if (eligiblePool.length == 0) revert EmptyEligiblePool();
@@ -306,7 +308,7 @@ contract SortitionGovernance is Initializable {
         bytes32 requestId = keccak256(abi.encode(address(this), round, block.timestamp));
         requestIdOfRound[round] = requestId;
 
-        randomnessSource.requestRandomness(requestId);
+        randomnessSource.requestRandomness{value: msg.value}(requestId);
 
         emit SortitionStarted(round, requestId);
     }
@@ -490,12 +492,20 @@ contract SortitionGovernance is Initializable {
         treasury = newTreasury;
     }
 
-    /// @notice Swaps the randomness provider (e.g. Switchboard <-> Chainlink)
-    ///         without touching council membership or proposal history.
+    /// @notice Swaps the randomness provider without touching council
+    ///         membership or proposal history. A round still waiting on the
+    ///         old provider is abandoned (its request would never be
+    ///         answered by the new one), so the next startSortition requests
+    ///         fresh randomness instead of the DAO being stuck. The council
+    ///         keeps serving until a later round is finalized.
     function setRandomnessSource(address newSource) external onlyGovernance {
         if (newSource == address(0)) revert ZeroAddress();
         emit RandomnessSourceUpdated(address(randomnessSource), newSource);
         randomnessSource = IRandomnessSource(newSource);
+        if (_roundActive) {
+            _roundActive = false;
+            emit SortitionRoundAbandoned(sortitionRound);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

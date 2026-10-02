@@ -17,33 +17,15 @@ interface IVotesToken {
 }
 
 /// @dev Minimal interface into an objective metric oracle - deliberately
-///      generic (a single int256 reading) rather than tied to any one
-///      vendor's specific feed interface, so a DAO can point this at
-///      whatever price/metric feed actually exists on its chain. Wiring a
-///      real Chainlink Data Feed or similar behind this interface is a
-///      separate, deliberately out-of-scope integration - same
-///      verify-against-the-real-package discipline as the randomness
-///      adapters, not guessed at here.
-/// @dev Deliberately generic (not tied to any one vendor's specific feed
-///      interface) so a DAO can point this at whatever price/metric feed
-///      actually exists on its chain. Includes an updatedAt timestamp -
-///      both real vendor feeds this is meant to sit in front of
-///      (Chainlink's AggregatorV3Interface, Switchboard's ISwitchboard)
-///      already return one, specifically so a consuming contract can
-///      reject stale data rather than trust a frozen or broken feed.
-///
-///      `selector` lets ONE deployed adapter serve many different feeds,
-///      rather than requiring a fresh adapter deployment per metric -
-///      genuinely meaningful for Switchboard, whose real contract is
-///      already one proxy address serving many feedIds; a
-///      SwitchboardPriceFeedAdapter interprets `selector` as that
-///      feedId directly. Chainlink has no equivalent concept - each
-///      price pair is already its own separately-deployed contract on
-///      Chainlink's own side, with or without anything built here - so
-///      ChainlinkPriceFeedAdapter simply ignores this parameter, still
-///      bound to one specific feed via its own constructor. Both
-///      satisfy this same interface; only the provider where "one
-///      proxy, many feeds" is real gets to take advantage of it.
+///      generic (a single int256 reading plus when it was published)
+///      rather than tied to one vendor, so a DAO can point this at
+///      whatever feed exists on its chain. PythPriceFeedAdapter is the
+///      one built here: `selector` is the Pyth price feed ID, so one
+///      adapter per network serves every feed, and values are 18-decimal
+///      fixed point. updatedAt lets resolveViaOracle reject stale data
+///      (maxOracleStaleness) rather than trust a frozen feed. Pyth is
+///      pull-based: post a fresh price update to the Pyth contract right
+///      before resolving.
 interface IMetricOracle {
     function latestValue(bytes32 selector) external view returns (int256 value, uint256 updatedAt);
 }
@@ -165,7 +147,7 @@ contract SowellianGovernance is Initializable {
         // Success criteria - fixed once approval passes.
         ResolutionMethod resolutionMethod;
         address oracle; // used only if resolutionMethod == Oracle
-        bytes32 oracleSelector; // which feed on `oracle` - meaningful for Switchboard-backed adapters, ignored by Chainlink-backed ones
+        bytes32 oracleSelector; // which feed on `oracle` - the Pyth price feed ID for PythPriceFeedAdapter
         int256 targetValue;
         bool targetIsMinimum; // true: success if metric >= targetValue; false: success if metric <= targetValue
         uint256 measurementPeriod; // seconds, counted from execution
