@@ -297,7 +297,34 @@ External dependencies on Base Sepolia:
 | Pyth Entropy | `0x41c9e39574F40Ad34c79f1C99B66A45eFB830d4c` | Pyth docs |
 | Pyth price feeds | `0x5f52e4DBEA21f5b23523B6e20d50c29ae0a4EB83` | Pyth docs |
 
-### Base mainnet, HyperEVM and Monad mainnet — not yet deployed
+### HyperEVM testnet (chain 998)
+
+Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot this network is `hyperevm-testnet` (add it to `NETWORKS`) and its variables take the `HYPEREVM_TESTNET_` prefix (`HYPEREVM_TESTNET_FACTORY_ADDRESS`, ...). The public RPC rate-limits hard; give the bot a provider endpoint as `HYPEREVM_TESTNET_RPC_URL`.
+
+| Contract | Address |
+|---|---|
+| DAOFactory (token-weighted) | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
+| QuadraticDAOFactory | `0xe61C9d371D3BEA6ceA5359E745593D8ebB39BEC5` |
+| LiquidDAOFactory | `0xd85923722591C005a23840Cd95B6888ABD11a345` |
+| OptimisticDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
+| DelegateDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
+| BoardDAOFactory | `0xcabF9a1c3e3e54715c52dfB45ae1AB7E1C3D3606` |
+| SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
+| ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
+| SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
+| DecisionMarketsDAOFactory | `0xAe322E1265530C58b03a2C36ab085500B9bc6624` |
+| PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
+| PythPriceFeedAdapter (Sowellian) | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
+
+External dependencies on HyperEVM testnet:
+
+| Dependency | Address | Source |
+|---|---|---|
+| WHYPE (canonical) | `0x5555555555555555555555555555555555555555` | Hyperliquid |
+| Pyth Entropy | `0x23f0e8FAeE7bbb405E7A7C3d60138FCfd43d7509` | Pyth docs |
+| Pyth price feeds | `0x99fA5f405b795cA03F2AE47Cd48FEd22029892a2` | Pyth docs |
+
+### Base mainnet, HyperEVM mainnet and Monad mainnet — not yet deployed
 
 The bot supports these networks (see `protean-bot`'s README, "Networks"); each needs its own factories deployed before DAOs can be created there.
 
@@ -306,7 +333,6 @@ The bot supports these networks (see `protean-bot`'s README, "Networks"); each n
 | Monad mainnet | 143 | `https://rpc.monad.xyz` | default |
 | Base | 8453 | `https://mainnet.base.org` | `size-limited` |
 | HyperEVM | 999 | `https://rpc.hyperliquid.xyz/evm` | `size-limited`, big blocks for deploys |
-| HyperEVM testnet | 998 | `https://rpc.hyperliquid-testnet.xyz/evm` | `size-limited`, big blocks for deploys |
 
 Chain IDs and RPCs are from viem's chain definitions. For each network, fill in:
 
