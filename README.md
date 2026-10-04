@@ -265,8 +265,8 @@ External dependencies on Monad testnet (third-party, verified against official d
 
 | Contract | Address |
 |---|---|
-| OpportunityMarketFactory | `0xB5E3586fFe76151035CD1dd1d2Cc75366A202D95` |
-| OpportunityMarket implementation | `0xF154CDEd01612Abb3200C2CDEE81F81d4268266a` |
+| OpportunityMarketFactory | `0xE9fF23EA5FE342568B5Db083E937f397C75c4625` |
+| OpportunityMarket implementation | `0xD05974d937454B534058D3B67513edA0010A2efB` |
 
 These are the pre-fix deployment (64-bit reward math, see [Opportunity Markets](#opportunity-markets)). Redeploy with `DeployOpportunityMarketFactory.s.sol` and point the bot's `OPPORTUNITY_MARKET_FACTORY_ADDRESS` at the new factory so new markets get the 128-bit math.
 
