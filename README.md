@@ -249,7 +249,7 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 | PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
 | PythPriceFeedAdapter (Sowellian) | `0x6C582533290855Af7F95d4484A6bb2e8C317949e` |
 
-The Switchboard adapters deployed earlier no longer work (Switchboard shut down). This `SortitionDAOFactory` clones the earlier Sortition implementation, whose `startSortition` isn't payable: its DAOs draw through the Entropy adapter from prefunded credit (`fund(governance)`), and switch to it with a `setRandomnessSource` proposal. Redeploy the factory for new DAOs to get the payable `startSortition` and the stuck-round reset. An existing DAO whose round is already waiting on Switchboard stays stuck (its `setRandomnessSource` predates the reset); its council keeps serving, but it can't draw again.
+This `SortitionDAOFactory` is the Pyth-era deployment (payable `startSortition`, stuck-round reset); `/createdao` points new Sortition DAOs at the Entropy adapter above. Sortition DAOs created from the earlier factory still point at the shut-down Switchboard adapter: each switches with a `sortition-set-randomness-source` proposal before its next draw, and draws from credit prefunded on the adapter (`fund(governance)`), since that implementation's `startSortition` isn't payable. A DAO whose round was already waiting on Switchboard stays stuck; its council keeps serving, but it can't draw again.
 
 
 External dependencies on Monad testnet (third-party, verified against official docs):
@@ -268,9 +268,53 @@ External dependencies on Monad testnet (third-party, verified against official d
 | OpportunityMarketFactory | `0xE9fF23EA5FE342568B5Db083E937f397C75c4625` |
 | OpportunityMarket implementation | `0xD05974d937454B534058D3B67513edA0010A2efB` |
 
-These are the pre-fix deployment (64-bit reward math, see [Opportunity Markets](#opportunity-markets)). Redeploy with `DeployOpportunityMarketFactory.s.sol` and point the bot's `OPPORTUNITY_MARKET_FACTORY_ADDRESS` at the new factory so new markets get the 128-bit math.
+Markets created from this factory use the 128-bit reward math (`REWARD_MATH_VERSION() == 2`, see [Opportunity Markets](#opportunity-markets)). Markets from the earlier factory keep the 64-bit math.
 
-### Base, HyperEVM and Monad mainnet — not yet deployed
+### Base Sepolia (chain 84532)
+
+Built with `FOUNDRY_PROFILE=size-limited` (EIP-170). In the bot this network is `base-sepolia` (add it to `NETWORKS`) and its variables take the `BASE_SEPOLIA_` prefix (`BASE_SEPOLIA_FACTORY_ADDRESS`, `BASE_SEPOLIA_SORTITION_RANDOMNESS_SOURCE`, ...).
+
+| Contract | Address |
+|---|---|
+| DAOFactory (token-weighted) | `0x72648d7954877Dadd9B38D71EE3C70e245D29B3a` |
+| QuadraticDAOFactory | `0xd85923722591C005a23840Cd95B6888ABD11a345` |
+| LiquidDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
+| OptimisticDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
+| DelegateDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
+| BoardDAOFactory | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
+| SortitionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
+| ConvictionDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
+| SowellianDAOFactory | `0x55C89331FA2F6a71E375c6C2aAf9BbE5b9b17fFe` |
+| DecisionMarketsDAOFactory | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
+| PythEntropyRandomnessAdapter (Sortition) | `0xaB7325AFfF2A7851457c52565Cfe4DC53DC9B1Fc` |
+| PythPriceFeedAdapter (Sowellian) | `0x9d109ba81002B85a48252115Ed5487F6b60C78F9` |
+
+Implementations (fixed inside each factory; listed for verification only):
+
+| Model | GovernanceToken | StakedGovernanceToken | Treasury | Governance |
+|---|---|---|---|---|
+| Token-weighted | `0xA9b77627C7af32Aec3B7B17769a4500d37D586bE` | `0x0b9E5a1AE5a9B6c84F509b62AA3156c95F8f4f5C` | `0x94978fc3629F8Aed1B8e995BE6621BCC88AEb6Da` | `0x0b7CC40C69CC536b48d7f1EF009dC96405b7E440` |
+| Quadratic | `0xF154CDEd01612Abb3200C2CDEE81F81d4268266a` | `0xB5E3586fFe76151035CD1dd1d2Cc75366A202D95` | `0xD05974d937454B534058D3B67513edA0010A2efB` | `0xE9fF23EA5FE342568B5Db083E937f397C75c4625` |
+| Liquid | `0xfC9BdB609a1165482B788900d4230dF868E21a33` | `0x9aD74281954826880a95F34a9273068F65fA385E` | `0x9Aa7b6CA73122AF2564E5641bc1f2109f4376b81` | `0x9363BBD955b57acC2aCF3CCd7Cf0D1D8e52C0544` |
+| Optimistic | `0x6c08bd963cB5bF6AA99FDeF5c729599d1dcc26a9` | `0x8bB68e835032e58c410125e5219B8Ae7FcAcc056` | `0xcabF9a1c3e3e54715c52dfB45ae1AB7E1C3D3606` | `0xc31C3E3fC33Ef2390dC51690a9223D0090566DD5` |
+| Delegate | `0x2994F1Ba001f2802ff93Cf6F80Ff2D1a7A87FFdF` | `0xeBBf3101F78493658a43564f310fe2883002f4De` | `0x952E51aDFB70DFDf4780ae6746345F9B3b6B4dD0` | `0x7c623634Fe2A94ABC4A54B34753CE2093d10E7D4` |
+| Board | - | - | `0xc6d9D3e0be0Bdf4Df84dF90B948C9D2949452dB5` | `0x74254Bb7840A88DAeb7033758259eb051863eC9c` |
+| Sortition | `0xB12d42d4BfB424Ba75e56c2913EdfA7dd787158F` | `0xca045CE5792eaCa44d5C582951d5e7A039f71D70` | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` | `0x4E3E1E1043A48f4f218BaE05e2c2cB67A522A9e1` |
+| Conviction | `0x367577d7626389bF97708495F7Dea22B49EdA8f7` | `0xb6169eC78dA1060Dac5Af21985853Ae97106D572` | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` | `0xA9999F42a65613A280bf35f53faa862C9e4bb7fE` |
+| Sowellian | `0x72b53Bb70e16475eCa33761cBcDebEF7dd6B1d00` | `0xcf0BeDd8109d48e2f4b9938f5DD76559480BA9C8` | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` | `0x81F6856e88C29F0F3b826033a148d420185E81eF` |
+| Decision Markets | `0xFc4724a72B1B67FD6DD5a35be0De3ca16fF70Af0` | `0xB546bC139E5935aA933bD8D8272513be8F9220Ce` | `0x2f65f7FBF81bB25993B684B1cC5F81F4aC30eE06` | `0x5Cac3B6Cf93afdE30dc9Dc0A00551Ef3b935110A` |
+
+Decision Markets also clones, per proposal: ConditionalToken `0x8F5a20c910aEbF287790e04799Ce0DB677705674`, ConditionalVault `0xAe322E1265530C58b03a2C36ab085500B9bc6624`, DecisionMarketPair `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3`.
+
+External dependencies on Base Sepolia:
+
+| Dependency | Address | Source |
+|---|---|---|
+| WETH (canonical) | `0x4200000000000000000000000000000000000006` | OP Stack predeploy |
+| Pyth Entropy | `0x41c9e39574F40Ad34c79f1C99B66A45eFB830d4c` | Pyth docs |
+| Pyth price feeds | `0x5f52e4DBEA21f5b23523B6e20d50c29ae0a4EB83` | Pyth docs |
+
+### Base mainnet, HyperEVM and Monad mainnet — not yet deployed
 
 The bot supports these networks (see `protean-bot`'s README, "Networks"); each needs its own factories deployed before DAOs can be created there.
 
@@ -278,7 +322,6 @@ The bot supports these networks (see `protean-bot`'s README, "Networks"); each n
 |---|---|---|---|
 | Monad mainnet | 143 | `https://rpc.monad.xyz` | default |
 | Base | 8453 | `https://mainnet.base.org` | `size-limited` |
-| Base Sepolia | 84532 | `https://sepolia.base.org` | `size-limited` |
 | HyperEVM | 999 | `https://rpc.hyperliquid.xyz/evm` | `size-limited`, big blocks for deploys |
 | HyperEVM testnet | 998 | `https://rpc.hyperliquid-testnet.xyz/evm` | `size-limited`, big blocks for deploys |
 
