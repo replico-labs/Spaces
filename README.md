@@ -100,6 +100,16 @@ A DAO can put a signer council between its governance and its assets. The DAO pa
 - Money comes back to the Treasury: `sweepNative` and `sweepERC20` send sale proceeds there.
 - Every one of those is `onlyGovernance` — a passed proposal.
 
+## Conviction spending budgets
+
+Conviction's bar used to grow only with native currency attached to a proposal's actions. Treasury spending goes through `Treasury.execute` calls instead, so a proposal emptying the Treasury needed the same conviction as one moving nothing. From `BUDGET_VERSION() == 2`:
+
+- **Asset list.** The DAO keeps a list of assets (native = `address(0)`) with a weight each: the extra conviction needed to spend *all* the Treasury holds of it. Native currency and the DAO's own token start listed at 900. The list changes only by proposal: `addAsset`, `setAssetWeight`, `removeAsset`.
+- **Budget.** `proposeWithBudget(actions, uri, budget)` declares how much of each listed asset the Treasury may lose. The bar is `minThresholdConviction + Σ weight × amount / holding` (an amount at or above the holding counts as all of it), fixed when the proposal is created. Plain `propose` means an empty budget.
+- **Enforced at execution.** Every listed asset's Treasury balance is read before and after the actions; a drop beyond the budget (zero for an undeclared asset) reverts the whole execution. A swap counts only what left. Approvals the actions granted on listed tokens (ERC20 `approve`/`increaseAllowance`, Permit2 `approve`) are revoked afterwards.
+- **Weakening the rules is expensive and slow.** A proposal that lowers or removes a weight, changes the config, treasury or staking token, hands over the Treasury (`transferGovernance`) or transfers any ownership needs `min + Σ all weights`. Listing an asset or raising a weight costs the minimum. Cuts and removals take effect `WEIGHT_CUT_DELAY` (7 days) later via `applyAssetChange`, callable by anyone.
+- **Limits.** Unlisted assets aren't checked at all. After a GuardWrapper handover, spending happens when the council confirms, outside the proposal's execution, so it isn't budget-checked (the handover itself needs the highest bar). Existing Conviction DAOs keep the implementation they were cloned from; only DAOs from a factory deployed after this change have budgets.
+
 ## Decision Markets
 
 A proposal's two outcomes — pass and fail — each get a live trading market over a fixed window. Real tokens are split into matched pass/fail conditional tokens; people trade the side they believe in; at the end, whichever market's time-weighted average price is meaningfully higher decides the outcome. Winning-side tokens redeem for real value; losing-side tokens are worthless.
