@@ -320,7 +320,7 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 | DelegateDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
 | BoardDAOFactory | `0xcabF9a1c3e3e54715c52dfB45ae1AB7E1C3D3606` |
 | SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
-| ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
+| ConvictionDAOFactory | `0xe0a07432bC7A9a3962B9B06AF539fDAc28e43dEc` |
 | SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
 | DecisionMarketsDAOFactory | `0xAe322E1265530C58b03a2C36ab085500B9bc6624` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
