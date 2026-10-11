@@ -253,7 +253,7 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 | DelegateDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
 | BoardDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
 | SortitionDAOFactory | `0x251b2371e2E98b5db9A2ceF3B687dF1A93BD24E6` |
-| ConvictionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
+| ConvictionDAOFactory | `0x85954E883aE073AC5C52fa6068e1ecC1C77F5004` |
 | SowellianDAOFactory | `0x075289669Ab8601dd8b15D95551644D511949056` |
 | DecisionMarketsDAOFactory | `0x99DeC80E792f9C1fA92F46fe08c6763CBCCfE388` |
 | PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
@@ -293,7 +293,7 @@ Built with `FOUNDRY_PROFILE=size-limited` (EIP-170). In the bot this network is 
 | DelegateDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
 | BoardDAOFactory | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
 | SortitionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
-| ConvictionDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
+| ConvictionDAOFactory | `0xBeB038379CD821811ab097308fABF89BcA4bBA7B` |
 | SowellianDAOFactory | `0x55C89331FA2F6a71E375c6C2aAf9BbE5b9b17fFe` |
 | DecisionMarketsDAOFactory | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xaB7325AFfF2A7851457c52565Cfe4DC53DC9B1Fc` |
