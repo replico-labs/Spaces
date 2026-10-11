@@ -216,7 +216,7 @@ forge script script/Deploy<Model>DAOFactory.s.sol:Deploy<Model>DAOFactory \
 
 On **Base / Base Sepolia / HyperEVM**, prefix every deploy with `FOUNDRY_PROFILE=size-limited` (see [contract size](#--via-ir-and-contract-size)).
 
-On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min, 30M gas). Deploying an implementation or factory needs more than 2M gas, so the deploying address must be switched to big blocks first (a HyperCore `evmUserModify` action with `usingBigBlocks: true` — check Hyperliquid's docs for the current method), and switched back afterwards. DAO creation fits in small blocks: the heaviest, `DelegateDAOFactory.createDAO`, measured 1.29M gas.
+On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min, 30M gas). Deploying an implementation or factory needs more than 2M gas, so the deploying address must be switched to big blocks first (a HyperCore `evmUserModify` action with `usingBigBlocks: true`), and switched back afterwards: `pip install hyperliquid-python-sdk`, then `python3 script/hyperevm_big_blocks.py on --testnet` before deploying and `python3 script/hyperevm_big_blocks.py off --testnet` after (drop `--testnet` for mainnet; it asks for the key with hidden input). DAO creation fits in small blocks: the heaviest, `DelegateDAOFactory.createDAO`, measured 1.29M gas.
 
 `GuardWrapper` and `NFTMarketplaceWrapper` have no deploy scripts: they are per-DAO and the bot deploys them on demand (`/deployguardwrapper`, `/deploynftwrapper`).
 
