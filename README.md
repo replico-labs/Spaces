@@ -253,7 +253,7 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 | DelegateDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
 | BoardDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
 | SortitionDAOFactory | `0x251b2371e2E98b5db9A2ceF3B687dF1A93BD24E6` |
-| ConvictionDAOFactory | `0x85954E883aE073AC5C52fa6068e1ecC1C77F5004` |
+| ConvictionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
 | SowellianDAOFactory | `0x075289669Ab8601dd8b15D95551644D511949056` |
 | DecisionMarketsDAOFactory | `0x99DeC80E792f9C1fA92F46fe08c6763CBCCfE388` |
 | PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
@@ -293,7 +293,7 @@ Built with `FOUNDRY_PROFILE=size-limited` (EIP-170). In the bot this network is 
 | DelegateDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
 | BoardDAOFactory | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
 | SortitionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
-| ConvictionDAOFactory | `0xBeB038379CD821811ab097308fABF89BcA4bBA7B` |
+| ConvictionDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
 | SowellianDAOFactory | `0x55C89331FA2F6a71E375c6C2aAf9BbE5b9b17fFe` |
 | DecisionMarketsDAOFactory | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xaB7325AFfF2A7851457c52565Cfe4DC53DC9B1Fc` |
@@ -320,7 +320,7 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 | DelegateDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
 | BoardDAOFactory | `0xcabF9a1c3e3e54715c52dfB45ae1AB7E1C3D3606` |
 | SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
-| ConvictionDAOFactory | `0xe0a07432bC7A9a3962B9B06AF539fDAc28e43dEc` |
+| ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
 | SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
 | DecisionMarketsDAOFactory | `0xAe322E1265530C58b03a2C36ab085500B9bc6624` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
