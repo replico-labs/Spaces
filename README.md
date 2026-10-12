@@ -324,7 +324,7 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 | SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
 | ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
 | SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
-| DecisionMarketsDAOFactory | `0x6cef69879Ab6132ED2938A77Faa6d282D0545D85` — one-step `propose`, which needs big blocks; redeploy from the current source for the two-step version |
+| DecisionMarketsDAOFactory | `0x6cef69879Ab6132ED2938A77Faa6d282D0545D85` — two-step `propose` + `openMarkets`, so proposals fit HyperEVM's small blocks |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
 | PythPriceFeedAdapter (Sowellian) | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 
