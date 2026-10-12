@@ -114,6 +114,8 @@ Conviction's bar used to grow only with native currency attached to a proposal's
 
 A proposal's two outcomes — pass and fail — each get a live trading market over a fixed window. Real tokens are split into matched pass/fail conditional tokens; people trade the side they believe in; at the end, whichever market's time-weighted average price is meaningfully higher decides the outcome. Winning-side tokens redeem for real value; losing-side tokens are worthless.
 
+Proposing takes two transactions: `propose(actions, uri, baseSeed)` (payable) takes the seed and splits it into pass/fail tokens, then `openMarkets(id)` deploys and seeds the two pools and starts the trading clock. Together they cost ~2.3M gas, more than HyperEVM's 2M small blocks hold in one transaction (~1.3M + ~0.6M apart). `openMarkets` is permissionless and runs once; until it does, the proposal can't be traded, finalized or executed, and cancelling it returns the seed to the proposer. Decision Markets factories deployed before this change (Monad testnet, Base Sepolia) do both in `propose`; the bot handles either.
+
 Native currency is wrapped when a proposal is seeded (WMON on Monad; the factory takes the chain's canonical wrapped-native token as `WMON_ADDRESS`, so WETH on Base, WHYPE on HyperEVM). Redemption and liquidity reclaim return the **wrapped** token — call `withdraw()` on it to unwrap.
 
 The constant-product AMM is a derivative of Uniswap V2 core (`github.com/Uniswap/v2-core`), GPL-3.0-or-later; `DecisionMarketPair.sol` carries that license. Everything else in this repository is MIT.
@@ -322,7 +324,7 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 | SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
 | ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
 | SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
-| DecisionMarketsDAOFactory | `0xAe322E1265530C58b03a2C36ab085500B9bc6624` |
+| DecisionMarketsDAOFactory | `0xAe322E1265530C58b03a2C36ab085500B9bc6624` — one-step `propose`, which needs big blocks; redeploy from the current source for the two-step version |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
 | PythPriceFeedAdapter (Sowellian) | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 

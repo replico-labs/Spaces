@@ -36,6 +36,15 @@ interface IERC20Orchestrator {
 ///      tested on their own; this orchestrator wires them together, and
 ///      that wiring is the newest, least-tested part of the whole system.
 ///
+///      TWO STEPS TO OPEN A PROPOSAL. propose() takes the seed and splits
+///      it into pass/fail tokens; openMarkets() deploys and seeds the two
+///      pools and starts the trading clock. Together they cost ~2.3M gas -
+///      more than HyperEVM's 2M small blocks take in one transaction - so
+///      they are separate. openMarkets() is permissionless (anyone can
+///      finish a proposal someone else started), and until it runs the
+///      proposal can't be traded, finalized or executed; cancelling it
+///      first gives the proposer the seed back.
+///
 ///      SEED LIQUIDITY IS NOT AUTOMATICALLY RECLAIMED. The LP tokens
 ///      minted when a proposal's pools are seeded stay held by this
 ///      contract indefinitely - not burned, not returned to the
@@ -58,7 +67,7 @@ contract DecisionMarketsGovernance is Initializable {
         ProposalAction[] actions;
         address proposer;
         string metadataURI;
-        uint256 createdAt;
+        uint256 createdAt; // when the markets opened - the start of the TWAP window
         uint256 tradingDeadline;
         address baseVault; // ConditionalVault for the DAO's governance token
         address quoteVault; // ConditionalVault for WMON
@@ -82,6 +91,12 @@ contract DecisionMarketsGovernance is Initializable {
     enum Side {
         Base,
         Quote
+    }
+
+    /// @dev A proposal's seed between propose() and openMarkets().
+    struct PendingSeed {
+        uint256 base;
+        uint256 quote;
     }
 
     struct DecisionMarketsConfig {
@@ -117,11 +132,14 @@ contract DecisionMarketsGovernance is Initializable {
     error NativeTransferFailed();
     error Unauthorized();
     error AlreadyReclaimed();
+    error MarketsNotOpen();
+    error MarketsAlreadyOpen();
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    event ProposalSeeded(uint256 indexed proposalId, address indexed proposer, uint256 baseSeed, uint256 quoteSeed);
     event ProposalCreated(
         uint256 indexed proposalId,
         address indexed proposer,
@@ -145,6 +163,7 @@ contract DecisionMarketsGovernance is Initializable {
     event GovernanceTokenUpdated(address indexed previousToken, address indexed newToken);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event LiquidityReclaimed(uint256 indexed proposalId, uint256 baseRecovered, uint256 quoteRecovered);
+    event SeedRefunded(uint256 indexed proposalId, uint256 baseRefunded, uint256 quoteRefunded);
 
     /*//////////////////////////////////////////////////////////////
                                 STATE
@@ -162,6 +181,7 @@ contract DecisionMarketsGovernance is Initializable {
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) internal _proposals;
+    mapping(uint256 => PendingSeed) internal _pendingSeeds;
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
@@ -174,6 +194,11 @@ contract DecisionMarketsGovernance is Initializable {
 
     modifier proposalExists(uint256 proposalId) {
         if (proposalId == 0 || proposalId > proposalCount) revert ProposalNotFound();
+        _;
+    }
+
+    modifier marketsOpen(uint256 proposalId) {
+        if (_proposals[proposalId].passPool == address(0)) revert MarketsNotOpen();
         _;
     }
 
@@ -228,13 +253,13 @@ contract DecisionMarketsGovernance is Initializable {
                     PROPOSAL CREATION & MARKET SEEDING
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Creates a proposal and its two decision markets in one
-    ///         transaction. The proposer deposits `baseSeedAmount` of the
-    ///         governance token (pulled via transferFrom) and sends
-    ///         native MON as `msg.value` (wrapped into WMON) - splitting
-    ///         each into a matched pass/fail pair seeds BOTH markets from
-    ///         one deposit, since a single split always produces both
-    ///         sides at once.
+    /// @notice Creates a proposal and takes its seed: the proposer deposits
+    ///         `baseSeedAmount` of the governance token (pulled via
+    ///         transferFrom) and sends native coin as `msg.value` (wrapped
+    ///         into WMON), and each is split into a matched pass/fail pair -
+    ///         one deposit seeds BOTH markets, since a split always produces
+    ///         both sides at once. The markets themselves open with
+    ///         openMarkets(), a second transaction (see the contract note).
     function propose(
         ProposalAction[] calldata actions,
         string calldata metadataURI,
@@ -252,15 +277,14 @@ contract DecisionMarketsGovernance is Initializable {
         p.id = proposalId;
         p.proposer = msg.sender;
         p.metadataURI = metadataURI;
-        p.createdAt = block.timestamp;
-        p.tradingDeadline = block.timestamp + _config.tradingPeriod;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
         }
+        _pendingSeeds[proposalId] = PendingSeed({ base: baseSeedAmount, quote: msg.value });
 
         // Pull the base-token seed from the proposer, and wrap the
-        // native MON sent as msg.value into WMON.
+        // native coin sent as msg.value into WMON.
         bool ok = IERC20Orchestrator(governanceToken).transferFrom(msg.sender, address(this), baseSeedAmount);
         if (!ok) revert TransferFailed();
         WMON(payable(wmon)).deposit{value: msg.value}();
@@ -273,26 +297,31 @@ contract DecisionMarketsGovernance is Initializable {
         _approveAndSplit(governanceToken, baseVault, baseSeedAmount);
         _approveAndSplit(wmon, quoteVault, msg.value);
 
-        ConditionalVault bv = ConditionalVault(baseVault);
-        ConditionalVault qv = ConditionalVault(quoteVault);
+        emit ProposalSeeded(proposalId, msg.sender, baseSeedAmount, msg.value);
+    }
 
-        address passPool = _deployAndSeedPool(
-            address(bv.passToken()),
-            address(qv.passToken()),
-            baseSeedAmount,
-            msg.value
-        );
-        address failPool = _deployAndSeedPool(
-            address(bv.failToken()),
-            address(qv.failToken()),
-            baseSeedAmount,
-            msg.value
-        );
+    /// @notice Opens a seeded proposal's two markets: deploys the pass and
+    ///         fail pools, seeds each with the proposal's pass (or fail)
+    ///         tokens, and starts the trading window. Permissionless, once
+    ///         per proposal; not after the proposal is cancelled.
+    function openMarkets(uint256 proposalId) external proposalExists(proposalId) {
+        Proposal storage p = _proposals[proposalId];
+        if (p.passPool != address(0)) revert MarketsAlreadyOpen();
+        if (p.cancelled) revert ProposalAlreadyCancelled();
 
+        PendingSeed memory seed = _pendingSeeds[proposalId];
+        delete _pendingSeeds[proposalId];
+        p.createdAt = block.timestamp;
+        p.tradingDeadline = block.timestamp + _config.tradingPeriod;
+
+        ConditionalVault bv = ConditionalVault(p.baseVault);
+        ConditionalVault qv = ConditionalVault(p.quoteVault);
+        address passPool = _deployAndSeedPool(address(bv.passToken()), address(qv.passToken()), seed.base, seed.quote);
+        address failPool = _deployAndSeedPool(address(bv.failToken()), address(qv.failToken()), seed.base, seed.quote);
         p.passPool = passPool;
         p.failPool = failPool;
 
-        emit ProposalCreated(proposalId, msg.sender, metadataURI, passPool, failPool);
+        emit ProposalCreated(proposalId, p.proposer, p.metadataURI, passPool, failPool);
     }
 
     function _deployVault(address underlying, string memory label) internal returns (address vault) {
@@ -344,7 +373,7 @@ contract DecisionMarketsGovernance is Initializable {
         Side sideIn,
         uint256 amountIn,
         uint256 minAmountOut
-    ) external proposalExists(proposalId) returns (uint256 amountOut) {
+    ) external proposalExists(proposalId) marketsOpen(proposalId) returns (uint256 amountOut) {
         Proposal storage p = _proposals[proposalId];
         if (block.timestamp >= p.tradingDeadline) revert TradingWindowClosed();
 
@@ -376,7 +405,7 @@ contract DecisionMarketsGovernance is Initializable {
     ///         threshold, and resolves both conditional vaults
     ///         accordingly. No oracle, no resolver, no challenge - the
     ///         comparison itself is the verdict.
-    function finalizeProposal(uint256 proposalId) external proposalExists(proposalId) {
+    function finalizeProposal(uint256 proposalId) external proposalExists(proposalId) marketsOpen(proposalId) {
         Proposal storage p = _proposals[proposalId];
         if (p.finalized) revert AlreadyFinalized();
         if (block.timestamp < p.tradingDeadline) revert TradingWindowStillOpen();
@@ -451,6 +480,18 @@ contract DecisionMarketsGovernance is Initializable {
 
         p.cancelled = true;
         emit ProposalCancelled(proposalId, msg.sender);
+
+        // Cancelled before its markets opened: the seed is still whole in
+        // the two vaults - merge it back and return it to the proposer.
+        PendingSeed memory seed = _pendingSeeds[proposalId];
+        if (p.passPool == address(0) && seed.base != 0) {
+            delete _pendingSeeds[proposalId];
+            ConditionalVault(p.baseVault).mergeTokens(seed.base);
+            ConditionalVault(p.quoteVault).mergeTokens(seed.quote);
+            if (!IERC20Orchestrator(governanceToken).transfer(p.proposer, seed.base)) revert TransferFailed();
+            if (!IERC20Orchestrator(wmon).transfer(p.proposer, seed.quote)) revert TransferFailed();
+            emit SeedRefunded(proposalId, seed.base, seed.quote);
+        }
     }
     /*//////////////////////////////////////////////////////////////
                         LIQUIDITY RECLAMATION

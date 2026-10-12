@@ -95,7 +95,13 @@ contract DecisionMarketsGovernanceTest is Test {
         actions[0] = DecisionMarketsGovernance.ProposalAction({target: recipient, value: 1 ether, data: ""});
     }
 
+    /// @dev Proposes and opens the markets - the two transactions the bot sends.
     function _propose(uint256 baseSeed, uint256 quoteSeed) internal returns (uint256 id) {
+        id = _seedOnly(baseSeed, quoteSeed);
+        gov.openMarkets(id);
+    }
+
+    function _seedOnly(uint256 baseSeed, uint256 quoteSeed) internal returns (uint256 id) {
         vm.startPrank(proposer);
         govToken.approve(address(gov), baseSeed);
         id = gov.propose{value: quoteSeed}(_singleAction(), "ipfs://p1", baseSeed);
@@ -126,6 +132,78 @@ contract DecisionMarketsGovernanceTest is Test {
         vm.expectRevert(DecisionMarketsGovernance.ZeroSeedAmount.selector);
         gov.propose{value: 0}(_singleAction(), "ipfs://p1", 1_000 ether);
         vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    OPENING THE MARKETS (SECOND STEP)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Propose_TakesSeedButLeavesMarketsClosed() public {
+        uint256 id = _seedOnly(1_000 ether, 10 ether);
+
+        DecisionMarketsGovernance.Proposal memory p = gov.getProposal(id);
+        assertEq(p.passPool, address(0));
+        assertEq(p.failPool, address(0));
+        assertEq(p.tradingDeadline, 0);
+        // The seed sits split in the vaults, held by the governance contract.
+        assertEq(ConditionalVault(p.baseVault).passToken().balanceOf(address(gov)), 1_000 ether);
+        assertEq(ConditionalVault(p.quoteVault).failToken().balanceOf(address(gov)), 10 ether);
+        assertEq(govToken.balanceOf(proposer), 9_000 ether);
+    }
+
+    function test_ClosedMarkets_CannotBeTradedOrFinalized() public {
+        uint256 id = _seedOnly(1_000 ether, 10 ether);
+
+        vm.expectRevert(DecisionMarketsGovernance.MarketsNotOpen.selector);
+        gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 1 ether, 0);
+
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
+        vm.expectRevert(DecisionMarketsGovernance.MarketsNotOpen.selector);
+        gov.finalizeProposal(id);
+
+        vm.expectRevert(DecisionMarketsGovernance.NotFinalized.selector);
+        gov.executeProposal(id);
+    }
+
+    function test_OpenMarkets_AnyoneCanOpenOnceAndTheClockStartsThen() public {
+        uint256 id = _seedOnly(1_000 ether, 10 ether);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+
+        vm.prank(bob);
+        gov.openMarkets(id);
+
+        DecisionMarketsGovernance.Proposal memory p = gov.getProposal(id);
+        assertEq(p.createdAt, vm.getBlockTimestamp());
+        assertEq(p.tradingDeadline, vm.getBlockTimestamp() + defaultConfig().tradingPeriod);
+        (uint112 r0, uint112 r1, ) = DecisionMarketPair(p.failPool).getReserves();
+        assertEq(uint256(r0), 1_000 ether);
+        assertEq(uint256(r1), 10 ether);
+
+        vm.expectRevert(DecisionMarketsGovernance.MarketsAlreadyOpen.selector);
+        gov.openMarkets(id);
+    }
+
+    function test_CancelBeforeOpening_RefundsTheSeed() public {
+        uint256 id = _seedOnly(1_000 ether, 10 ether);
+
+        vm.prank(proposer);
+        gov.cancelProposal(id);
+
+        assertEq(govToken.balanceOf(proposer), 10_000 ether);
+        assertEq(wmon.balanceOf(proposer), 10 ether);
+
+        vm.expectRevert(DecisionMarketsGovernance.ProposalAlreadyCancelled.selector);
+        gov.openMarkets(id);
+    }
+
+    function test_CancelAfterOpening_LeavesSeedInThePools() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+
+        vm.prank(proposer);
+        gov.cancelProposal(id);
+
+        assertEq(govToken.balanceOf(proposer), 9_000 ether);
+        assertEq(wmon.balanceOf(proposer), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
