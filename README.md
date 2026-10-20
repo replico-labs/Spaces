@@ -132,7 +132,7 @@ Conviction's bar used to grow only with native currency attached to a proposal's
 
 A proposal's two outcomes — pass and fail — each get a live trading market over a fixed window. Real tokens are split into matched pass/fail conditional tokens; people trade the side they believe in; at the end, whichever market's time-weighted average price is meaningfully higher decides the outcome. Winning-side tokens redeem for real value; losing-side tokens are worthless.
 
-Proposing takes two transactions: `propose(actions, uri, baseSeed)` (payable) takes the seed and splits it into pass/fail tokens, then `openMarkets(id)` deploys and seeds the two pools and starts the trading clock. Together they cost ~2.3M gas, more than HyperEVM's 2M small blocks hold in one transaction (~1.3M + ~0.6M apart). `openMarkets` is permissionless and runs once; until it does, the proposal can't be traded, finalized or executed, and cancelling it returns the seed to the proposer. Decision Markets factories deployed before this change (Monad testnet, Base Sepolia) do both in `propose`; the bot handles either.
+Proposing takes two transactions: `propose(actions, uri, baseSeed)` (payable) takes the seed and splits it into pass/fail tokens, then `openMarkets(id)` deploys and seeds the two pools and starts the trading clock. Together they cost ~2.3M gas, more than HyperEVM's 2M small blocks hold in one transaction (~1.3M + ~0.6M apart). `openMarkets` is permissionless and runs once; until it does, the proposal can't be traded, finalized or executed, and cancelling it returns the seed to the proposer. Decision Markets factories deployed before this change did both in `propose`; the bot handles either.
 
 Native currency is wrapped when a proposal is seeded (WMON on Monad; the factory takes the chain's canonical wrapped-native token as `WMON_ADDRESS`, so WETH on Base, WHYPE on HyperEVM). Redemption and liquidity reclaim return the **wrapped** token — call `withdraw()` on it to unwrap.
 
@@ -238,6 +238,26 @@ On **Base / Base Sepolia / HyperEVM**, prefix every deploy with `FOUNDRY_PROFILE
 
 On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min, 30M gas). Deploying an implementation or factory needs more than 2M gas, so the deploying address must be switched to big blocks first (a HyperCore `evmUserModify` action with `usingBigBlocks: true`), and switched back afterwards: `pip install hyperliquid-python-sdk`, then `python3 script/hyperevm_big_blocks.py on --testnet` before deploying and `python3 script/hyperevm_big_blocks.py off --testnet` after (drop `--testnet` for mainnet; it asks for the key with hidden input). DAO creation fits in small blocks: the heaviest, `DelegateDAOFactory.createDAO`, measured 1.29M gas.
 
+### Deploying all ten factories at once
+
+`script/deploy-monad.sh`, `script/deploy-base.sh` (Base Sepolia) and `script/deploy-hyperevm.sh` (HyperEVM testnet) run the ten deploy scripts in a row with each chain's settings, append the output to `<chain>-deploy.log` and print the ten factory addresses at the end. Run them from the repo root with the deployer's key in `PRIVATE_KEY`:
+
+```bash
+export PRIVATE_KEY=0x...
+bash script/deploy-monad.sh
+
+bash script/deploy-base.sh
+
+export HYPEREVM_TESTNET_RPC_URL=https://...    # a provider endpoint; the public one rate-limits
+python3 script/hyperevm_big_blocks.py on --testnet
+bash script/deploy-hyperevm.sh
+python3 script/hyperevm_big_blocks.py off --testnet
+```
+
+Each stops at the first model that fails; remove the models already deployed from its `for` list and run it again. The Base and HyperEVM scripts wait 20 seconds between models: a load-balanced RPC can still report the wallet's old nonce right after a deploy, and Foundry then stops with `CreateCollision` before sending anything. On HyperEVM, `--slow` waits for each transaction to land in a big block before sending the next.
+
+The log appends on every run, so with repeated runs the last address listed for a factory is the current one.
+
 `GuardWrapper` and `NFTMarketplaceWrapper` have no deploy scripts: they are per-DAO and the bot deploys them on demand (`/deployguardwrapper`, `/deploynftwrapper`).
 
 Oracle and randomness adapters are standalone, one-time deployments per network. Each takes Pyth's own contract address, copied from Pyth's docs, and its constructor rejects an address that isn't one:
@@ -266,16 +286,16 @@ Only factory addresses need to be configured anywhere; implementation addresses 
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0x8bB68e835032e58c410125e5219B8Ae7FcAcc056` |
-| QuadraticDAOFactory | `0x9d109ba81002B85a48252115Ed5487F6b60C78F9` |
-| LiquidDAOFactory | `0x55C89331FA2F6a71E375c6C2aAf9BbE5b9b17fFe` |
-| OptimisticDAOFactory | `0x8F5a20c910aEbF287790e04799Ce0DB677705674` |
-| DelegateDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
-| BoardDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
-| SortitionDAOFactory | `0x251b2371e2E98b5db9A2ceF3B687dF1A93BD24E6` |
-| ConvictionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
-| SowellianDAOFactory | `0x075289669Ab8601dd8b15D95551644D511949056` |
-| DecisionMarketsDAOFactory | `0x99DeC80E792f9C1fA92F46fe08c6763CBCCfE388` |
+| DAOFactory (token-weighted) | `0x1E74465b71Efc31bA82595184901F4673Fd78f8b` |
+| QuadraticDAOFactory | `0x8318EFffde90051e15BCa31c7c152c21a8327F26` |
+| LiquidDAOFactory | `0xC9D558424FB62AB38557F6B0e4d37072417e267c` |
+| OptimisticDAOFactory | `0x24c429c21C27034Aa7C7D5cF426E2489E8117B82` |
+| DelegateDAOFactory | `0xCd3848a3c7B8Ad83147043bA7dF6627e959c3a25` |
+| BoardDAOFactory | `0xdB646047e92e47CdE63F7a4087aa193dd098ee1e` |
+| SortitionDAOFactory | `0x1183fbb37da24a5CdA9dE6ffe7B214a0F65309a0` |
+| ConvictionDAOFactory | `0x9447a8e4e974c2618C74F5f39D5d8FC9648da9aA` |
+| SowellianDAOFactory | `0x5d6107C5f81b025454424435D9Fb9A27CeFC5b71` |
+| DecisionMarketsDAOFactory | `0xafa037279B093e12e21d56B780Aacef9Cea4034C` |
 | PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
 | PythPriceFeedAdapter (Sowellian) | `0x6C582533290855Af7F95d4484A6bb2e8C317949e` |
 
@@ -306,16 +326,16 @@ Built with `FOUNDRY_PROFILE=size-limited` (EIP-170). In the bot this network is 
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0x72648d7954877Dadd9B38D71EE3C70e245D29B3a` |
-| QuadraticDAOFactory | `0xd85923722591C005a23840Cd95B6888ABD11a345` |
-| LiquidDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
-| OptimisticDAOFactory | `0x2367d102B71ab6c3c3b69eD7580c3Be3ACb5BE9A` |
-| DelegateDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
-| BoardDAOFactory | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
-| SortitionDAOFactory | `0x14439Fa27258c8fd65F5805eA5617774891f173c` |
-| ConvictionDAOFactory | `0x3fFb77D2A380C52e04b8d22E73EDc7d47e8f975c` |
-| SowellianDAOFactory | `0x55C89331FA2F6a71E375c6C2aAf9BbE5b9b17fFe` |
-| DecisionMarketsDAOFactory | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
+| DAOFactory (token-weighted) | `0xE7C0f3c8C88B670Ae2aF94f9BA822783fF46309d` |
+| QuadraticDAOFactory | `0xF33D2623642C03Fa40F4A023a57Daeac08D1e22c` |
+| LiquidDAOFactory | `0x68cf661C6D02F06866e7FeCa876BC0d9DAAacC02` |
+| OptimisticDAOFactory | `0x5d7CCd6D1ac7877B878912747D7EcbC307eA8B28` |
+| DelegateDAOFactory | `0xfa4179B38ebcf58B796F3a47260bBdE68b49d311` |
+| BoardDAOFactory | `0x41450e38E4a0D047EC9e53dA67fCaf28285B6E18` |
+| SortitionDAOFactory | `0x376722eAE27cf44ab461EC185CaA44c1AA92d016` |
+| ConvictionDAOFactory | `0x05Ad0011c4b9F76fd2ADd98FA75569897dC29c73` |
+| SowellianDAOFactory | `0xf9B54c2bACE4ffcaa9FBB4A6B5b0cE1FDf467e2B` |
+| DecisionMarketsDAOFactory | `0x0374551bc05Abb36CAac883568528D8E4ba76d86` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xaB7325AFfF2A7851457c52565Cfe4DC53DC9B1Fc` |
 | PythPriceFeedAdapter (Sowellian) | `0x9d109ba81002B85a48252115Ed5487F6b60C78F9` |
 
@@ -333,16 +353,16 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0x0be87f0Cf85dbfE6dc572eb4E2FD1FD46e96F475` |
-| QuadraticDAOFactory | `0xe61C9d371D3BEA6ceA5359E745593D8ebB39BEC5` |
-| LiquidDAOFactory | `0xd85923722591C005a23840Cd95B6888ABD11a345` |
-| OptimisticDAOFactory | `0x5107BEfC0fEbE1E16bb8F408768bc5FF9F872658` |
-| DelegateDAOFactory | `0x10F551fF56455366AE7E9D3c3BBc96c9f058E821` |
-| BoardDAOFactory | `0xcabF9a1c3e3e54715c52dfB45ae1AB7E1C3D3606` |
-| SortitionDAOFactory | `0x867b9e9edD9dE98979c9C6a82EEc363B077B96De` |
-| ConvictionDAOFactory | `0xBF49Fc7a3788c0CA53420ee6ccDA4aD9C5457362` |
-| SowellianDAOFactory | `0xa9356ccA371D3b91a82f1fee3898E8ef444E512E` |
-| DecisionMarketsDAOFactory | `0x6cef69879Ab6132ED2938A77Faa6d282D0545D85` — two-step `propose` + `openMarkets`, so proposals fit HyperEVM's small blocks |
+| DAOFactory (token-weighted) | `0xa1Fa1b05aF481927696D82f66E3f0e05a30e2C85` |
+| QuadraticDAOFactory | `0xdDc69979c91cb86C287E8dE71652b54304Ae1d90` |
+| LiquidDAOFactory | `0xaBAcb2156C1E2281314eA62D192ab631b1655020` |
+| OptimisticDAOFactory | `0x9E427292547DCcd3e0Fda5280E6F5bdE8B668fb6` |
+| DelegateDAOFactory | `0x3D1F2ba56477a32fDC68fc984956039586Ebd8b2` |
+| BoardDAOFactory | `0x69f24C7732045E11414224C39BA93654F6Dc30BC` |
+| SortitionDAOFactory | `0x413CA37e89d4E4007C52fD11Bf4cc1dF1DAFaC2e` |
+| ConvictionDAOFactory | `0x382e5502e5B853477449E506e379B92E9b603dBb` |
+| SowellianDAOFactory | `0x485AA51eaFB8A3030FB00040272CC2a38D4E85aF` |
+| DecisionMarketsDAOFactory | `0x2f6Cf6Cbaac436DDBb7590501416f57F890f2478` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
 | PythPriceFeedAdapter (Sowellian) | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 

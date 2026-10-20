@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 RPC=https://testnet-rpc.monad.xyz
 export WMON_ADDRESS=0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541
 
