@@ -74,12 +74,10 @@ contract ConvictionDAOFactoryTest is Test {
         assertEq(token.authorizedLocker(), address(gov));
     }
 
-    function test_CreateDAO_FactoryRemainsStakingWrapperOwner() public view {
-        // Documented, deliberate behavior - ownership of the staking
-        // wrapper is never transferred away from the factory, which is
-        // exactly what makes the setAuthorizedLocker call above possible
-        // in the first place.
-        assertEq(token.owner(), address(factory));
+    function test_CreateDAO_GovernanceOwnsStakingWrapper() public view {
+        // Handed over after setAuthorizedLocker, so a model switch can
+        // later move the locker role to the new governance.
+        assertEq(token.owner(), address(gov));
     }
 
     function test_CreateDAO_GovernanceReadsVotesFromStakingWrapper() public view {

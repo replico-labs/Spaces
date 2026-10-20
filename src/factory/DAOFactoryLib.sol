@@ -63,4 +63,55 @@ library DAOFactoryLib {
         treasury = Treasury(payable(treasuryImplementation.clone()));
         treasury.initialize(address(this));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                            MODEL SWITCHING
+    //////////////////////////////////////////////////////////////*/
+
+    error NotTreasuryGovernance();
+    error StakingTokenMismatch();
+    error StakingNotOwned();
+    error UnexpectedGovernanceAddress();
+
+    /// @dev A switch is called from inside an executed proposal of the
+    ///      DAO's current governance, which must still control the
+    ///      Treasury. Staking, when given, must wrap the given token.
+    function checkSwitch(address treasury, address token, address stakedToken) internal view {
+        if (Treasury(payable(treasury)).governance() != msg.sender) revert NotTreasuryGovernance();
+        if (stakedToken != address(0) && address(StakedGovernanceToken(stakedToken).underlying()) != token) {
+            revert StakingTokenMismatch();
+        }
+    }
+
+    /// @dev Locking models need the old governance to own the staking
+    ///      contract, so the same proposal can make the new one its locker.
+    function checkStakingOwned(address stakedToken) internal view {
+        if (StakedGovernanceToken(stakedToken).owner() != msg.sender) revert StakingNotOwned();
+    }
+
+    function switchSalt(address previousGovernance, uint256 nonce) internal pure returns (bytes32) {
+        return keccak256(abi.encode(previousGovernance, nonce));
+    }
+
+    /// @dev The address the next switch away from `previousGovernance`
+    ///      deploys to, so the switch proposal can name it in the
+    ///      handover actions that follow the deploy.
+    function predictSwitch(address implementation, address previousGovernance, uint256 nonce)
+        internal
+        view
+        returns (address)
+    {
+        return implementation.predictDeterministicAddress(switchSalt(previousGovernance, nonce), address(this));
+    }
+
+    /// @dev Reverts unless the clone lands where the proposal expects, so
+    ///      the handover actions after it can never point at an empty
+    ///      address.
+    function cloneForSwitch(address implementation, uint256 nonce, address expectedGovernance)
+        internal
+        returns (address governance)
+    {
+        governance = implementation.cloneDeterministic(switchSalt(msg.sender, nonce));
+        if (governance != expectedGovernance) revert UnexpectedGovernanceAddress();
+    }
 }

@@ -26,6 +26,16 @@ contract OptimisticDAOFactory {
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
 
+    /// @notice For a governance deployed by a model switch, the governance
+    ///         it replaced. Zero for DAOs created fresh.
+    mapping(address => address) public predecessorOf;
+
+    /// @notice Switches away from each governance so far, used to derive
+    ///         the next switch's deterministic address.
+    mapping(address => uint256) public switchNonce;
+
+    event DAOSwitched(uint256 indexed daoId, address indexed previousGovernance, address governance, address treasury);
+
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
 
     constructor(
@@ -69,8 +79,39 @@ contract OptimisticDAOFactory {
 
         treasury.transferGovernance(governance);
         token.transferOwnership(governance);
+        stakedToken.transferOwnership(governance);
 
         _recordDAO(name, address(stakedToken), address(token), governance, address(treasury));
+    }
+
+    /// @notice Switches an existing DAO to this model. Deploys only the
+    ///         governance contract, pointed at the DAO's own Treasury and
+    ///         staking contract, at the address predictSwitchGovernance()
+    ///         returned. Must be called by the DAO's current governance as
+    ///         the first action of a switch proposal; the actions after it
+    ///         hand the Treasury, token and staking contract to the new
+    ///         governance, all in the same execution.
+    function createForSwitch(
+        string calldata name,
+        address treasury,
+        address token,
+        address stakedToken,
+        OptimisticGovernance.OptimisticGovernanceConfig calldata config,
+        address expectedGovernance
+    ) external returns (address governance) {
+        DAOFactoryLib.checkSwitch(treasury, token, stakedToken);
+        governance = DAOFactoryLib.cloneForSwitch(optimisticGovernanceImplementation, switchNonce[msg.sender]++, expectedGovernance);
+        OptimisticGovernance(governance).initialize(name, msg.sender, stakedToken, treasury, config);
+
+        _recordDAO(name, stakedToken, token, governance, treasury);
+        predecessorOf[governance] = msg.sender;
+        emit DAOSwitched(daoCount, msg.sender, governance, treasury);
+    }
+
+    /// @notice The address the next switch of `previousGovernance` to this
+    ///         model will deploy to.
+    function predictSwitchGovernance(address previousGovernance) external view returns (address) {
+        return DAOFactoryLib.predictSwitch(optimisticGovernanceImplementation, previousGovernance, switchNonce[previousGovernance]);
     }
 
     function _recordDAO(

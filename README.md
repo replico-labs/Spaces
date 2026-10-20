@@ -80,12 +80,30 @@ Plus **Opportunity Markets** — confidential, FHE-encrypted backing of listed o
 
 ## Key design decisions
 
-- **Governance and treasury are decoupled.** A DAO can vote to move to a different model via `transferGovernance()` without funds moving.
+- **Governance and treasury are decoupled.** A DAO can vote to switch to a different model without funds moving, and members keep their staked balances (see [Switching models](#switching-models)).
 - **Voting power requires staking, not just holding**, in every token-based model.
 - **Snapshot-based, flash-loan-resistant voting** wherever a discrete vote happens. Where a model has no single voting moment (Conviction), committed tokens are locked instead.
 - **Randomness and price data are provider-agnostic.** Sortition and Sowellian depend only on small interfaces; which oracle network sits behind them is a per-deployment choice. Pyth provides both on every supported chain: Entropy for randomness, Pyth price feeds for Sowellian. (The Switchboard and Chainlink adapters were removed when Switchboard shut down.)
 - **One oracle adapter, many feeds.** `IMetricOracle.latestValue(bytes32 selector)` takes a per-proposal selector stored on each Sowellian proposal. `PythPriceFeedAdapter` treats it as the Pyth price feed ID, so one deployment per network serves every feed. It returns prices as 18-decimal fixed point whatever the feed's exponent, so a proposal's `targetValue` is always price × 1e18 ($3,000 → `3000e18`).
 - **Sortition pays for its randomness.** Pyth Entropy charges a small native fee per request. `startSortition` is payable and forwards what it's sent; the adapter (`requestFee()`) takes the fee from that plus any credit the DAO holds there, and keeps the rest as the DAO's credit. Anyone can top up a DAO's credit with `fund(governance)`, which is how Sortition DAOs cloned before `startSortition` was payable still draw. `setRandomnessSource` abandons a round still waiting on the old provider, so a DAO is never stuck behind randomness that will never arrive.
+
+## Switching models
+
+A DAO moves to another model with **one proposal on its current governance**. Nothing else is redeployed: the new governance reads the same staking contract, so every member keeps their stake and voting power, and the Treasury stays where it is. The proposal's actions, run in order and all or nothing:
+
+1. `targetFactory.createForSwitch(name, treasury, token, staking, config, …, expectedGovernance)` deploys only the new governance contract. The factory checks the caller still controls the Treasury and that the staking contract wraps the token, and reverts unless the clone lands at `expectedGovernance`, the address `predictSwitchGovernance(currentGovernance)` returned when the proposal was built. Delegate and Sortition also take a starting council (Sortition a randomness source), and Board its signers.
+2. `treasury.transferGovernance(newGovernance)`
+3. `token.transferOwnership(newGovernance)`
+4. `staking.setAuthorizedLocker(newGovernance)` for Conviction, `address(0)` for anything else
+5. `staking.transferOwnership(newGovernance)`
+
+The factory records the switch: `predecessorOf(newGovernance)` is the governance it replaced, `daos(id)` lists the DAO's token and staking contract (Board included, so a Board DAO can later switch back to a token model), and it emits `DAOSwitched`. The bot's `/switchmodel` builds this proposal and moves the chat's link once it executes.
+
+- **Staking belongs to governance.** Factories now hand `StakedGovernanceToken` ownership to the new governance along with the token and Treasury. DAOs from older factories have staking owned by their factory forever, so they leave out steps 4–5, and can switch to any model except Conviction (`StakingNotOwned`), which needs to become the locker.
+- **Locks are tracked per locker.** `lockedBy(locker, account)` records what each governance locked. A Conviction governance replaced by a switch can no longer lock anything, but supporters can still `withdrawSupport()` there to release their stake.
+- **Old proposals die with the old governance.** It no longer controls the Treasury, so anything it executes that touches the Treasury, token or staking reverts. A second switch proposal built against it reverts at step 1.
+- **Needs the new factories.** `createForSwitch` exists only on factories deployed after this change, so each network's factories have to be redeployed (same scripts, same constructor arguments) before its DAOs can switch. Existing DAOs then switch through the new factories.
+- **Funds held by the old governance itself** (not the Treasury) stay there; move them before switching.
 
 ## Security council (GuardWrapper)
 
@@ -199,7 +217,7 @@ forge test --via-ir                          # default profile (Monad)
 FOUNDRY_PROFILE=size-limited forge test      # optimized, as deployed to Base / HyperEVM
 ```
 
-Current result: **564 tests passed, 0 failed, 0 skipped** across 34 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
+Current result: **615 tests passed, 0 failed, 0 skipped** across 36 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, model switching (`ModelSwitch.t.sol`: into every model, Board and back, and away from Conviction with live locks), GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
 
 ## Deployment
 

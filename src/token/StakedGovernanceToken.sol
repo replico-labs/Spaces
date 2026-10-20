@@ -66,11 +66,12 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
 
     /// @notice Admin address - can transfer itself and designate which
     ///         single governance contract (if any) is allowed to lock
-    ///         balances.
+    ///         balances. The factories hand it to the DAO's governance,
+    ///         and a model switch hands it on to the new one.
     address public owner;
 
     /// @notice The one governance contract currently authorized to call
-    ///         lock()/unlock() - address(0) means locking is disabled
+    ///         lock() - address(0) means locking is disabled
     ///         entirely. Only needed by governance models that require
     ///         committed support to stay committed (ConvictionGovernance,
     ///         for example) - every other model in this system never
@@ -80,6 +81,12 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
     /// @notice How much of an account's balance is currently locked -
     ///         neither transferable nor unstakable below this amount.
     mapping(address => uint256) public lockedBalance;
+
+    /// @notice How much of `lockedBalance[account]` each locker holds.
+    ///         When a DAO switches models, the old governance stops being
+    ///         the authorized locker but keeps the right to release what
+    ///         it locked, so members can still withdraw old support.
+    mapping(address => mapping(address => uint256)) public lockedBy;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -176,14 +183,18 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
         uint256 newLocked = lockedBalance[account] + amount;
         if (newLocked > balanceOf(account)) revert InsufficientUnlockedBalance();
         lockedBalance[account] = newLocked;
+        lockedBy[msg.sender][account] += amount;
         emit Locked(account, amount);
     }
 
-    /// @notice Releases `amount` of a previously locked balance.
-    function unlock(address account, uint256 amount) external onlyAuthorizedLocker {
-        uint256 current = lockedBalance[account];
-        if (amount > current) revert InsufficientLockedBalance();
-        lockedBalance[account] = current - amount;
+    /// @notice Releases `amount` of a balance the caller locked earlier.
+    ///         Any past locker may release its own locks, so a governance
+    ///         contract replaced as locker can still let members out.
+    function unlock(address account, uint256 amount) external {
+        uint256 mine = lockedBy[msg.sender][account];
+        if (amount > mine) revert InsufficientLockedBalance();
+        lockedBy[msg.sender][account] = mine - amount;
+        lockedBalance[account] -= amount;
         emit Unlocked(account, amount);
     }
 

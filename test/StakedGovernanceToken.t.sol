@@ -304,6 +304,38 @@ contract StakedGovernanceTokenTest is Test {
         assertEq(staked.lockedBalance(alice), 20 ether);
     }
 
+    function test_Unlock_ReplacedLockerCanStillReleaseItsOwnLocks() public {
+        _stakeFor(alice, 100 ether);
+        staked.setAuthorizedLocker(address(this));
+        staked.lock(alice, 60 ether);
+
+        staked.setAuthorizedLocker(bob);
+        vm.prank(bob);
+        staked.lock(alice, 30 ether);
+
+        // The old locker can't lock any more...
+        vm.expectRevert(StakedGovernanceToken.Unauthorized.selector);
+        staked.lock(alice, 1 ether);
+
+        // ...but can release what it locked, and only that.
+        vm.expectRevert(StakedGovernanceToken.InsufficientLockedBalance.selector);
+        staked.unlock(alice, 61 ether);
+        staked.unlock(alice, 60 ether);
+        assertEq(staked.lockedBalance(alice), 30 ether);
+        assertEq(staked.lockedBy(bob, alice), 30 ether);
+    }
+
+    function test_Unlock_NewLockerCannotReleaseOldLocks() public {
+        _stakeFor(alice, 100 ether);
+        staked.setAuthorizedLocker(address(this));
+        staked.lock(alice, 60 ether);
+        staked.setAuthorizedLocker(bob);
+
+        vm.prank(bob);
+        vm.expectRevert(StakedGovernanceToken.InsufficientLockedBalance.selector);
+        staked.unlock(alice, 1 ether);
+    }
+
     /*//////////////////////////////////////////////////////////////
         THE ACTUAL FIX: LOCKED BALANCE BLOCKS TRANSFER AND UNSTAKE
         (this is what ConvictionGovernance's fix actually depends on -

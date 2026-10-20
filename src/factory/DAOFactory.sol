@@ -7,6 +7,7 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../governance/Types.sol";
 import "./IDAOFactory.sol";
+import "./DAOFactoryLib.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title DAOFactory
@@ -44,10 +45,9 @@ import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 ///      here as constructor arguments. createDAO() then deploys cheap
 ///      ~45-byte EIP-1167 clones pointing at those addresses, and
 ///      initializes each clone exactly as the original constructors did.
-///      StakedGovernanceToken's owner is left as the factory (never
-///      transferred to governance) - preserving the original's existing
-///      behavior exactly, not a new design choice introduced by this
-///      conversion.
+///      StakedGovernanceToken's ownership goes to governance along with
+///      the token and Treasury, so the DAO can later switch models
+///      (createForSwitch) and hand all three to the new governance.
 contract DAOFactory is IDAOFactory {
     using Clones for address;
 
@@ -59,6 +59,16 @@ contract DAOFactory is IDAOFactory {
     uint256 public daoCount;
     mapping(uint256 => DAOInfo) public daos;
     mapping(address => address[]) public creatorDAOs;
+
+    /// @notice For a governance deployed by a model switch, the governance
+    ///         it replaced. Zero for DAOs created fresh.
+    mapping(address => address) public predecessorOf;
+
+    /// @notice Switches away from each governance so far, used to derive
+    ///         the next switch's deterministic address.
+    mapping(address => uint256) public switchNonce;
+
+    event DAOSwitched(uint256 indexed daoId, address indexed previousGovernance, address governance, address treasury);
 
     constructor(
         address governanceTokenImplementation_,
@@ -113,20 +123,52 @@ contract DAOFactory is IDAOFactory {
 
         treasury.transferGovernance(governance);
         token.transferOwnership(governance);
+        stakedToken.transferOwnership(governance);
 
+        _recordDAO(name, address(stakedToken), address(token), governance, address(treasury));
+    }
+
+    /// @notice Switches an existing DAO to this model. Deploys only the
+    ///         governance contract, pointed at the DAO's own Treasury and
+    ///         staking contract, at the address predictSwitchGovernance()
+    ///         returned. Must be called by the DAO's current governance as
+    ///         the first action of a switch proposal; the actions after it
+    ///         hand the Treasury, token and staking contract to the new
+    ///         governance, all in the same execution.
+    function createForSwitch(
+        string calldata name,
+        address treasury,
+        address token,
+        address stakedToken,
+        GovernanceConfig calldata config,
+        address expectedGovernance
+    ) external returns (address governance) {
+        DAOFactoryLib.checkSwitch(treasury, token, stakedToken);
+        governance = DAOFactoryLib.cloneForSwitch(governanceImplementation, switchNonce[msg.sender]++, expectedGovernance);
+        Governance(governance).initialize(name, msg.sender, stakedToken, treasury, config);
+
+        _recordDAO(name, stakedToken, token, governance, treasury);
+        predecessorOf[governance] = msg.sender;
+        emit DAOSwitched(daoCount, msg.sender, governance, treasury);
+    }
+
+    /// @notice The address the next switch of `previousGovernance` to this
+    ///         model will deploy to.
+    function predictSwitchGovernance(address previousGovernance) external view returns (address) {
+        return DAOFactoryLib.predictSwitch(governanceImplementation, previousGovernance, switchNonce[previousGovernance]);
+    }
+
+    function _recordDAO(
+        string calldata name,
+        address stakedToken,
+        address token,
+        address governance,
+        address treasury
+    ) private {
         daoCount++;
-        daos[daoCount] = DAOInfo(
-            name,
-            msg.sender,
-            address(stakedToken),
-            address(token),
-            governance,
-            address(treasury),
-            block.timestamp
-        );
+        daos[daoCount] = DAOInfo(name, msg.sender, stakedToken, token, governance, treasury, block.timestamp);
         creatorDAOs[msg.sender].push(governance);
-
-        emit DAOCreated(daoCount, msg.sender, governance, address(treasury), address(stakedToken));
+        emit DAOCreated(daoCount, msg.sender, governance, treasury, stakedToken);
     }
 
     function getCreatorDAOs(address creator) external view returns (address[] memory) {
