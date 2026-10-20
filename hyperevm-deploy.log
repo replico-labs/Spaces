@@ -1,0 +1,361 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract DAOFactory 0xa1Fa1b05aF481927696D82f66E3f0e05a30e2C85
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0x251c26B7ba5E57e1b3Ca421BB8B1Ed1f4f75F37C
+  StakedGovernanceToken implementation deployed at: 0xc4ab7f41A1CF2ed2e129A5D851689A3f78cEAA5F
+  Treasury implementation deployed at: 0xB69deC223dF369da54551c559c09D296739BB2CB
+  Governance implementation deployed at: 0x4BC124B2b54004b82CED8F74a02A0273575F448e
+  DAOFactory deployed at: 0xa1Fa1b05aF481927696D82f66E3f0e05a30e2C85
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.202861543 gwei
+
+Estimated total gas used for script: 11396480
+
+Estimated amount required: 0.00231190751756864 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract QuadraticDAOFactory 0xdDc69979c91cb86C287E8dE71652b54304Ae1d90
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0xA1a3D66444baae149A5028D23ffe621159D44B7b
+  StakedGovernanceToken implementation deployed at: 0x482cD8b7A7AD93baBf2585B6fecFc40eBF4cE839
+  Treasury implementation deployed at: 0xD7Bb2e5A31d0962200873F7F3f5CEb5921F90Eec
+  QuadraticGovernance implementation deployed at: 0xbe773ED78F49372c7558DF42c98d99C5A2393615
+  QuadraticDAOFactory deployed at: 0xdDc69979c91cb86C287E8dE71652b54304Ae1d90
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.205011522 gwei
+
+Estimated total gas used for script: 11216922
+
+Estimated amount required: 0.002299598251375284 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployQuadraticDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployQuadraticDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract LiquidDAOFactory 0xaBAcb2156C1E2281314eA62D192ab631b1655020
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0xEc794762954dA0777b4732e205A5a6C59F176aEe
+  StakedGovernanceToken implementation deployed at: 0xB09109A847B00C58aDb090e07EdC9ECDbA09CA4C
+  Treasury implementation deployed at: 0x28590B84277A05375d5a306ccFa305e8B5C25bb4
+  LiquidGovernance implementation deployed at: 0xE0E0462AD1bfE377a7a5B3C8DfC03DBcc897F7Da
+  LiquidDAOFactory deployed at: 0xaBAcb2156C1E2281314eA62D192ab631b1655020
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.212341001 gwei
+
+Estimated total gas used for script: 11712998
+
+Estimated amount required: 0.002487149720030998 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployLiquidDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployLiquidDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract OptimisticDAOFactory 0x9E427292547DCcd3e0Fda5280E6F5bdE8B668fb6
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0x32617C21101e284297aC02dEAF012D52490090B4
+  StakedGovernanceToken implementation deployed at: 0x51fA555b4b54C0A4588773B1A4bc10AFa72B54ae
+  Treasury implementation deployed at: 0x067Ba3D1d427A251f37eedE9a54411AB7984bC16
+  OptimisticGovernance implementation deployed at: 0xBC57797C74aBf3554d0B9f630e2C1b2A0b2D1fD9
+  OptimisticDAOFactory deployed at: 0x9E427292547DCcd3e0Fda5280E6F5bdE8B668fb6
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200000001 gwei
+
+Estimated total gas used for script: 11490304
+
+Estimated amount required: 0.002298060811490304 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployOptimisticDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployOptimisticDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract DelegateDAOFactory 0x3D1F2ba56477a32fDC68fc984956039586Ebd8b2
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0xa16E2181bcdC5ff04B5853108c69e9502dcaaECc
+  StakedGovernanceToken implementation deployed at: 0xdFEafDf01A252BFE8CEc1cc5c53632a7fCc84B5B
+  Treasury implementation deployed at: 0x8F836f21774c943c1c7d626FF7b80e9967548acd
+  DelegateGovernance implementation deployed at: 0x6E5096A9682481067784b0b99A4A9A13507795CD
+  DelegateDAOFactory deployed at: 0x3D1F2ba56477a32fDC68fc984956039586Ebd8b2
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200633603 gwei
+
+Estimated total gas used for script: 12963091
+
+Estimated amount required: 0.002600831653346873 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployDelegateDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployDelegateDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract BoardDAOFactory 0x69f24C7732045E11414224C39BA93654F6Dc30BC
+
+== Logs ==
+  Treasury implementation deployed at: 0xa9Ae3a59c9B895b52A8961bED362fBE1C1AcCB63
+  BoardGovernance implementation deployed at: 0x428ee0671e1258Bf3F1F1f0A4ba5e56751C7401d
+  BoardDAOFactory deployed at: 0x69f24C7732045E11414224C39BA93654F6Dc30BC
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.22 gwei
+
+Estimated total gas used for script: 4355061
+
+Estimated amount required: 0.00095811342 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployBoardDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployBoardDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract SortitionDAOFactory 0x413CA37e89d4E4007C52fD11Bf4cc1dF1DAFaC2e
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0xd7194b2de5d72ac6Dcd54BD3fA33174Fd2C36580
+  StakedGovernanceToken implementation deployed at: 0xf08a3Dc834059C357D594264dBaaDE4bd5f3601f
+  Treasury implementation deployed at: 0xeecA7dF7fF1a885F46c9Ab2ba94226e830DEacA9
+  SortitionGovernance implementation deployed at: 0x1f53d4200481Ffd8F224620389B9aBA1127d86f2
+  SortitionDAOFactory deployed at: 0x413CA37e89d4E4007C52fD11Bf4cc1dF1DAFaC2e
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200498458 gwei
+
+Estimated total gas used for script: 12260500
+
+Estimated amount required: 0.002458211344309 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeploySortitionDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeploySortitionDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract ConvictionDAOFactory 0x382e5502e5B853477449E506e379B92E9b603dBb
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0xA474DA0762f3cD51D03Fe7Cda8511A7F46d880a3
+  StakedGovernanceToken implementation deployed at: 0x78CE4C08Ac2CAE6E68AD91CD7Bb6066E12Bf1582
+  Treasury implementation deployed at: 0x00590BBc55384C2243D4FE02455263bEb74D25f6
+  ConvictionGovernance implementation deployed at: 0x15A1d4c86BDb73B8d34289Cf3e5CC6144faaA1cd
+  ConvictionDAOFactory deployed at: 0x382e5502e5B853477449E506e379B92E9b603dBb
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200000001 gwei
+
+Estimated total gas used for script: 13117656
+
+Estimated amount required: 0.002623531213117656 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployConvictionDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployConvictionDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract SowellianDAOFactory 0x485AA51eaFB8A3030FB00040272CC2a38D4E85aF
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0x5E9eC078e9bC96D7C6BA4e70B886B03AfC612590
+  StakedGovernanceToken implementation deployed at: 0x6170c7d9F52FdA28c164caD00D3a57dd71d5feD1
+  Treasury implementation deployed at: 0xedb2906b0cA2E7f9dA245eAe1fa10977110900df
+  SowellianGovernance implementation deployed at: 0x28c6629650611C310ac8071B16CE855B3779d2D8
+  SowellianDAOFactory deployed at: 0x485AA51eaFB8A3030FB00040272CC2a38D4E85aF
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200000001 gwei
+
+Estimated total gas used for script: 12841664
+
+Estimated amount required: 0.002568332812841664 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeploySowellianDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeploySowellianDAOFactory.s.sol/998/run-latest.json
+
+No files changed, compilation skipped
+Script ran successfully.
+
+== Return ==
+factory: contract DecisionMarketsDAOFactory 0x2f6Cf6Cbaac436DDBb7590501416f57F890f2478
+
+== Logs ==
+  GovernanceToken implementation deployed at: 0x97f4f849789E0E70ffbE8040e74B8144AB860f05
+  StakedGovernanceToken implementation deployed at: 0x89C8545551F9FB7952cc83807862d3aF1a0E639A
+  Treasury implementation deployed at: 0x540DAf0452442f4Ce030695691E804a670D1E82c
+  DecisionMarketsGovernance implementation deployed at: 0x7a360DD9D2e7C58AC4A7eA44AE8a7F545Dd0a9e7
+  ConditionalToken implementation deployed at: 0x03feDBa29BCef4aB50379e3015D588029aA051F3
+  ConditionalVault implementation deployed at: 0xfc9cef53c7ECf636788E0422348AD065b1Bfab04
+  DecisionMarketPair implementation deployed at: 0x3264e5d5625afEb6d7E40812889956a75b63df27
+  DecisionMarketsDAOFactory deployed at: 0x2f6Cf6Cbaac436DDBb7590501416f57F890f2478
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 998
+
+Estimated gas price: 0.200000001 gwei
+
+Estimated total gas used for script: 15994314
+
+Estimated amount required: 0.003198862815994314 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/MadMarvin/Spaces/broadcast/DeployDecisionMarketsDAOFactory.s.sol/998/run-latest.json
+
+Sensitive values saved to: /Users/MadMarvin/Spaces/cache/DeployDecisionMarketsDAOFactory.s.sol/998/run-latest.json
+
