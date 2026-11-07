@@ -75,9 +75,7 @@ contract GovernanceTokenTest is Test {
 
     function test_Mint_OnlyOwner() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice)
-        );
+        vm.expectRevert(GovernanceToken.NotAllowed.selector);
         token.mint(alice, 100 ether);
     }
 
@@ -135,9 +133,7 @@ contract GovernanceTokenTest is Test {
         assertEq(token.balanceOf(bob), 10 ether);
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, owner)
-        );
+        vm.expectRevert(GovernanceToken.NotAllowed.selector);
         token.mint(bob, 10 ether);
     }
 
@@ -204,4 +200,41 @@ contract GovernanceTokenTest is Test {
         assertEq(token.getPastTotalSupply(blockBeforeMint), INITIAL_SUPPLY);
         assertEq(token.getPastTotalSupply(vm.getBlockNumber() - 1), INITIAL_SUPPLY + 100 ether);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         MINTER (PROP-FIRM VAULT)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Minter_SetByOwnerMintsWithinMaxSupply() public {
+        address vault = makeAddr("vault");
+        vm.prank(alice);
+        vm.expectRevert(GovernanceToken.NotAllowed.selector);
+        token.setMinter(vault);
+        vm.prank(owner);
+        token.setMinter(vault);
+        vm.prank(vault);
+        token.mint(bob, 5 ether);
+        assertEq(token.balanceOf(bob), 5 ether);
+        uint256 max = token.maxSupply();
+        vm.prank(vault);
+        vm.expectRevert("Max supply exceeded");
+        token.mint(bob, max);
+    }
+
+    function test_Minter_SetupWindowOnlyForContractsAndOnlyThisBlock() public {
+        vm.prank(owner);
+        token.setSetupAuthority(alice); // a wallet: ignored
+        assertEq(token.setupAuthority(), address(0));
+
+        address launcher = address(new GovernanceToken()); // any contract
+        vm.prank(owner);
+        token.setSetupAuthority(launcher);
+        vm.prank(launcher);
+        token.setMinter(makeAddr("vault"));
+        vm.roll(block.number + 1);
+        vm.prank(launcher);
+        vm.expectRevert(GovernanceToken.NotAllowed.selector);
+        token.setMinter(launcher);
+    }
 }
+

@@ -27,6 +27,68 @@ contract StakedGovernanceTokenTest is Test {
 
         vm.prank(recipient);
         underlying.transfer(alice, 500 ether);
+
+        // Alice lets both lockers these tests use lock her stake.
+        vm.startPrank(alice);
+        staked.approveLocker(address(this), true);
+        staked.approveLocker(bob, true);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    CONSENT, AND STAKING FOR SOMEONE ELSE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Lock_NeedsTheMembersApproval() public {
+        vm.prank(recipient);
+        underlying.transfer(bob, 100 ether);
+        vm.startPrank(bob);
+        underlying.approve(address(staked), 100 ether);
+        staked.stake(100 ether);
+        vm.stopPrank();
+        staked.setAuthorizedLocker(address(this));
+
+        vm.expectRevert(StakedGovernanceToken.LockerNotApproved.selector);
+        staked.lock(bob, 1 ether);
+
+        vm.prank(bob);
+        staked.approveLocker(address(this), true);
+        staked.lock(bob, 40 ether);
+
+        // Withdrawing consent stops new locks, never releases old ones.
+        vm.prank(bob);
+        staked.approveLocker(address(this), false);
+        vm.expectRevert(StakedGovernanceToken.LockerNotApproved.selector);
+        staked.lock(bob, 1 ether);
+        assertEq(staked.lockedBalance(bob), 40 ether);
+        staked.unlock(bob, 40 ether);
+        assertEq(staked.lockedBalance(bob), 0);
+    }
+
+    function test_StakeFor_GivesTheStakeAndVotesToTheAccount() public {
+        vm.startPrank(alice);
+        underlying.approve(address(staked), 70 ether);
+        staked.stakeFor(bob, 70 ether);
+        vm.stopPrank();
+
+        assertEq(staked.balanceOf(bob), 70 ether);
+        assertEq(staked.balanceOf(alice), 0);
+        assertEq(staked.delegates(bob), bob, "delegated to itself");
+        assertEq(staked.getVotes(bob), 70 ether);
+        assertEq(underlying.balanceOf(alice), 430 ether, "paid by the caller");
+
+        vm.prank(bob);
+        staked.unstake(70 ether);
+        assertEq(underlying.balanceOf(bob), 70 ether);
+    }
+
+    function test_StakeFor_RevertsOnZero() public {
+        vm.startPrank(alice);
+        vm.expectRevert(StakedGovernanceToken.ZeroAmount.selector);
+        staked.stakeFor(bob, 0);
+        vm.expectRevert(StakedGovernanceToken.ZeroAddress.selector);
+        staked.stakeFor(address(0), 1);
+        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////

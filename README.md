@@ -68,12 +68,20 @@ Plus **Opportunity Markets** — confidential, FHE-encrypted backing of listed o
 | `governance/{delegate,board,quadratic,optimistic,conviction,sortition,liquid,sowellian,futarchy}/` | The other nine models, each self-contained |
 | `governance/futarchy/{ConditionalToken,ConditionalVault,DecisionMarketPair,WMON}.sol` | Decision Markets machinery — split/merge/redeem conditional tokens, constant-product AMM |
 | `governance/opportunity-market/` | `OpportunityMarket` + factory (FHE, Sepolia) |
-| `token/GovernanceToken.sol` | Raw ERC20 with `ERC20Votes`; minting is governance-controlled |
-| `token/StakedGovernanceToken.sol` | Vote-escrow wrapper — stake here to get voting power; optional lock used by Conviction |
-| `treasury/Treasury.sol` | Holds funds; acts only on instructions from its registered `governance` |
+| `token/GovernanceToken.sol` | Raw ERC20 with `ERC20Votes`; minting is governance-controlled (plus a prop firm's vault, as its `minter`) |
+| `token/StakedGovernanceToken.sol` | Vote-escrow wrapper — stake here to get voting power; locks (Conviction) only with the member's consent; `stakeFor` for converters |
+| `treasury/Treasury.sol` | Holds funds; acts only on instructions from its registered `governance`; pays monthly allowances |
 | `factory/` | One clone-based factory per model, plus the shared `DAOFactoryLib` |
-| `distribution/WelcomeDistributor.sol` | Optional capped welcome-token distribution, one claim per address |
-| `wrapper/GuardWrapper.sol` | Optional security council: governance proposes an instruction, a signer threshold confirms it before it is forwarded. Signers can never initiate anything |
+| `distribution/Distributor.sol` | Every token a DAO has promised (raise shares, team shares, grants, welcome grants), with vesting; claims tied to chat accounts |
+| `distribution/Raise.sol` | A pro-rata fundraise: open for the whole period, the DAO accepts any amount from the soft cap up, the rest is refunded |
+| `distribution/Launcher.sol` | Launches a DAO from a raise in one transaction: DAO, Distributor, Treasury funding, agreed allowances (and a prop firm's vault) |
+| `distribution/DistributionFactory.sol` | One per network: clones Distributors and Raises |
+| `vault/PropFirmVault.sol` | A prop firm's fund: windowed deposits and redemptions, its shares are the DAO's token, fees, drawdown pause |
+| `vault/{HyperCoreValuer,PerplValuer}.sol` | What the vault holds on each venue, read from the venue itself |
+| `vault/VaultFactory.sol` | One per network: clones vaults, makes valuers |
+| `wrapper/GuardWrapper.sol` | Optional security council: governance proposes an instruction (or a batch), a signer threshold confirms it before it is forwarded. Signers can never initiate anything |
+| `wrapper/WrapperFactory.sol` | One per network: clones GuardWrapper, NFTMarketplaceWrapper and StakeConverter for each DAO at predictable addresses |
+| `converter/StakeConverter.sol` | Optional, after a token change: moves a member's stake from the old token to the new one at a rate the DAO voted |
 | `marketplace/NFTMarketplaceWrapper.sol` | Optional EIP-1271 signer for NFT marketplaces — and where a DAO's NFTs live (see [NFTs](#nfts)) |
 | `randomness/` | `IRandomnessSource` + `PythEntropyRandomnessAdapter` (used by Sortition) |
 | `oracles/` | `PythPriceFeedAdapter` behind `IMetricOracle` (used by Sowellian) |
@@ -104,10 +112,60 @@ The factory records the switch: `predecessorOf(newGovernance)` is the governance
 - **Old proposals die with the old governance.** It no longer controls the Treasury, so anything it executes that touches the Treasury, token or staking reverts. A second switch proposal built against it reverts at step 1.
 - **Needs the new factories.** `createForSwitch` exists only on factories deployed after this change, so each network's factories have to be redeployed (same scripts, same constructor arguments) before its DAOs can switch. Existing DAOs then switch through the new factories.
 - **Funds held by the old governance itself** (not the Treasury) stay there; move them before switching.
+- **Board keeps the token.** A switch to Board records the DAO's token and staking contract on the Board itself (`governanceToken()`, `underlyingToken()`), and `setGovernanceToken` updates them while on Board, so the next switch to a token model carries them over.
+- **A DAO with no token** (Board-born) can switch to a token model: the switch proposal's first action is `factory.createTokenForSwitch(name, symbol, supply, maxSupply, treasury, salt)`, which makes a GovernanceToken (the supply minted to the Treasury) and its staking contract, owned by the caller, at the addresses `predictTokenForSwitch(currentGovernance, salt)` gives. To adopt an existing ERC20 instead, `factory.createStaking(token, owner, salt)` makes just the staking contract. The actions after that are the usual five.
+- **Any model in either direction,** as often as the DAO likes, including a fresh copy of the model it runs now.
+- **With a security council,** see [Security council](#security-council-guardwrapper).
+
+## Changing the token
+
+A DAO can move to a new token without changing its governance. One proposal on the current governance:
+
+1. `factory.createTokenForSwitch(…)` for a new token, or `factory.createStaking(existingToken, governance, salt)` to adopt one: a new staking contract S2 at a predicted address. Conviction also calls `S2.setAuthorizedLocker(governance)`.
+2. `governance.setGovernanceToken(S2)`.
+3. Optional: `wrapperFactory.createConverter(S1, S2, rateNum, rateDen, treasury, salt)` and a Treasury transfer of the new token into it.
+
+From then on new proposals use S2. **Proposals already open keep the token they were created with**: every model stores it per proposal (`proposalToken(id)`; Delegate per election and recall, Decision Markets `proposalBaseToken(id)`), and votes, quorum, state, Optimistic and Sowellian bonds, Conviction locks and Decision Markets refunds and reclaimed liquidity all use it. Members unstake from S1 whenever they like and stake in S2.
+
+**The converter.** `convert(amount)`, after approving it for `amount` of S1: the member's old stake is unstaked, the old tokens go to the Treasury, and `amount × rateNum / rateDen` of the new token is staked for them in S2 (`stakeFor`), in one call. It only converts what's funded. The DAO tops it up or `close()`s it by proposal; closing returns what's left to the Treasury.
+
+**Locks need the member's consent.** A staking contract's locker (Conviction) can only lock an account that called `approveLocker(locker, true)`. Revoking stops new locks and never releases old ones.
 
 ## Security council (GuardWrapper)
 
-A DAO can put a signer council between its governance and its assets. The DAO passes two proposals — `Treasury.transferGovernance(wrapper)` and, on the raw token, `transferOwnership(wrapper)` — after which Treasury and minting calls only work through the wrapper: governance calls `proposeInstruction(target, value, data)`, and the call is forwarded once enough signers `confirmInstruction`. Signers can confirm, revoke or reject, never initiate. Signer replacement is tenure-gated and needs no signer confirmation — the on-chain timestamp check is the proof — so a council can't entrench itself, and governance can't bypass tenure either. The bot's `/handovertowrapper` computes both handover proposals, and `/proposeaction` automatically routes Treasury and token actions through a linked wrapper after the handover.
+A DAO can put a signer council between its governance and its assets. Treasury, minting and staking-admin calls then only work through the wrapper: governance calls `proposeInstruction(target, value, data)` (or `proposeBatch(calls)` for several calls confirmed and run together, all or nothing), and it's forwarded once enough signers `confirmInstruction`. Signers can confirm, revoke or reject, never initiate. Signer replacement is tenure-gated and needs no signer confirmation — the on-chain timestamp check is the proof — so a council can't entrench itself, and governance can't bypass tenure either.
+
+- **Turning it on: one proposal.** `wrapperFactory.createGuardWrapper(governance, signers, required, tenure, salt)` clones a wrapper at `predictGuardWrapper(governance, salt)`; then `treasury.transferGovernance(wrapper)`, `token.transferOwnership(wrapper)`, `staking.transferOwnership(wrapper)`.
+- **Switching with a council: one proposal, one confirmation.** `factory.createForSwitch(…)` (factories accept a caller whose Treasury answers to a wrapper that answers to it), then `wrapper.proposeBatch([wrapper.setGovernance(newGov), staking.setAuthorizedLocker(newGov or 0)])`. When the council confirms, the wrapper points at the new governance in one step; the Treasury, token and staking contract never move. If it rejects, the new governance exists but controls nothing.
+- **Turning it off:** a proposal sends the wrapper a batch handing the Treasury, token and staking contract back to the governance, which the council confirms. If the council refuses, the DAO replaces the signers once their tenure ends (`replaceSigners`), then turns it off.
+- **Changing the token with a council:** create S2 owned by the wrapper (`createStaking(token, wrapper, salt)`); `governance.setGovernanceToken(S2)` is a call on the governance itself and doesn't need the council. Funding a converter from the Treasury does.
+
+`/proposeaction` automatically routes Treasury and token actions through a linked wrapper.
+
+## Monthly allowances
+
+A proposal grants a recipient (a contractor, a team member, any address) an amount of one token, or the native coin, per 30-day period: `treasury.createAllowance(recipient, token, amount, endsAt)`, ending at most a year out. The recipient calls `claimAllowance(id)` once per period; a period not claimed lapses. `updateAllowance` and `revokeAllowance` by proposal. They live on the Treasury, so they survive model switches and token changes; under a security council, creating one goes through the council, claiming doesn't.
+
+## Raises, launches and the Distributor
+
+- **Raise.** Contributions stay open for the whole period, past the hard cap (the stated target). At the end, below the soft cap everyone is refunded; otherwise the decider accepts any amount from the soft cap up, with no upper limit, within the decision window (no decision: full refunds). Tokens and refunds are pro rata. The money only goes to the DAO's Treasury. `settle` writes each contributor's tokens into the Distributor; `withdrawRefund` pays refunds to the contributing address.
+- **Existing DAO.** A proposal calls `distributionFactory.createRaise(terms, salt)` (the governance becomes the decider), creates and funds a Distributor with the sale tokens, and a later proposal accepts.
+- **Launch.** A founder calls `launcher.createLaunch(factory, createCall, terms, shares, allowances, operator, claimDeadline, propFirm)`; `createCall` is the chosen model's `createDAO`. When the raise ends, `finish(id, amount)` deploys the DAO, creates its Distributor with the sale and team shares, sends the accepted money to the new Treasury and sets the agreed allowances (the Treasury lets the launch contract do that in the creation block only), about 3.4M gas. Only factories the Launcher's owner approved can be called.
+- **Distributor.** Allocations belong to an address, a chat account id, or both, each with optional vesting (cliff then linear). The owning address claims for itself; for an account, the bot's operator claims into that member's wallet. Welcome grants: a proposal sets the amount and cap, and a council member of the DAO's governance approves each one. Admin is whoever the Treasury answers to.
+
+## Prop-firm vaults
+
+Only for DAOs launched as prop firms: the vault's shares are the DAO's token (the vault is the token's `minter`), so there's never a second token.
+
+- **Windows.** `requestDeposit` / `requestRedeem` any time; `processWindow` (anyone, when due) values the vault (idle money plus each venue's `IValuer`), takes fees, then prices redemptions and deposits at one price. Members `claimShares` / `claimRedemption` after. Redemptions are owed at the window price and paid as money comes back from the desks.
+- **Safety.** A stale price makes the window wait. Moves to venues (`execute`, by the DAO) stop `freezeBefore` a window, and the window waits `settleDelay` after the last move, so money in flight isn't missed or counted twice. A drawdown past `maxDrawdownBps` below the high water mark sets `paused` (the bot stops signing traders' orders) until a proposal calls `resume`; `checkDrawdown` lets a keeper check between windows.
+- **Fees.** A yearly management fee and a performance fee above the high water mark, minted as shares and split between traders and the Treasury as the DAO configures (`setFeeSplits`).
+- **Valuers.** `HyperCoreValuer` reads spot USDC and the perp account value from HyperCore's precompiles (`0x…0801`, `0x…080F`; perp USD taken as 6 decimals, to confirm against Hyperliquid's API before use). `PerplValuer` adds the desk account's balance, each listed market's margin and its PnL at the mark price; whether funding and Perpl's other PnL fields belong in it is still to confirm on a mainnet fork.
+- **Launch.** A prop firm's launch creates the vault, sends the accepted money in, and the first shares go to the Distributor for the contributors.
+
+## Council seats (Delegate)
+
+The Delegate council is numbered seats, optionally labelled by proposal (`setSeatLabel`). Candidates `declareCandidacy(electionId, seat)` for one seat; voters pick at most one candidate per seat. Each seat goes to its most-voted candidate; a tie is drawn with the factory's randomness source (Pyth Entropy; `finalizeElection` is payable for its fee, then `resolveTies`), or goes to whoever declared first when there is none. A seat nobody runs for keeps its holder; a recall leaves the seat vacant.
 
 ## NFTs
 
@@ -116,7 +174,7 @@ A DAO can put a signer council between its governance and its assets. The DAO pa
 - NFTs are sent to the wrapper, never to the Treasury.
 - The wrapper lists them (governance approves the hash the marketplace checks the signature against — for Seaport that is the order's EIP-712 digest, not the raw order hash; the wrapper answers EIP-1271 `isValidSignature`), sends them out (`transferERC721` / `transferERC1155` — which refuse the Treasury as a recipient), or calls a marketplace directly (`execute`).
 - Money comes back to the Treasury: `sweepNative` and `sweepERC20` send sale proceeds there.
-- Every one of those is `onlyGovernance` — a passed proposal.
+- Every one of those is `onlyGovernance` — a passed proposal. A model switch includes `setGovernance(newGovernance)` so the wrapper follows the DAO.
 
 ## Conviction spending budgets
 
@@ -217,7 +275,7 @@ forge test --via-ir                          # default profile (Monad)
 FOUNDRY_PROFILE=size-limited forge test      # optimized, as deployed to Base / HyperEVM
 ```
 
-Current result: **615 tests passed, 0 failed, 0 skipped** across 36 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, model switching (`ModelSwitch.t.sol`: into every model, Board and back, and away from Conviction with live locks), GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
+Current result: **632 tests passed, 0 failed, 0 skipped** across 36 suites under both (Foundry 1.5.1, solc 0.8.33) — every governance model, every factory, the token/treasury core, model switching (`ModelSwitch.t.sol`: into every model, Board and back, and away from Conviction with live locks), token changes (open proposals keeping their token, the converter, Conviction locks across a change, Board keeping and changing the token, a Board-born DAO switching into a token model with a new token), the security council (on in one proposal, a switch under it, a rejected switch, off with the council or after tenure, batches all or nothing), consent locks and `stakeFor`, Decision Markets refunds and reclaimed liquidity and Optimistic bonds across a token change, GuardWrapper, the NFT wrapper (including against a real `Treasury`), adapters, the futarchy system and Opportunity Markets.
 
 ## Deployment
 
@@ -238,9 +296,9 @@ On **Base / Base Sepolia / HyperEVM**, prefix every deploy with `FOUNDRY_PROFILE
 
 On **HyperEVM**, blocks come in two sizes: small (~1 s, 2M gas) and big (~1 min, 30M gas). Deploying an implementation or factory needs more than 2M gas, so the deploying address must be switched to big blocks first (a HyperCore `evmUserModify` action with `usingBigBlocks: true`), and switched back afterwards: `pip install hyperliquid-python-sdk`, then `python3 script/hyperevm_big_blocks.py on --testnet` before deploying and `python3 script/hyperevm_big_blocks.py off --testnet` after (drop `--testnet` for mainnet; it asks for the key with hidden input). DAO creation fits in small blocks: the heaviest, `DelegateDAOFactory.createDAO`, measured 1.29M gas.
 
-### Deploying all ten factories at once
+### Deploying all ten factories (and the WrapperFactory) at once
 
-`script/deploy-monad.sh`, `script/deploy-base.sh` (Base Sepolia) and `script/deploy-hyperevm.sh` (HyperEVM testnet) run the ten deploy scripts in a row with each chain's settings, append the output to `<chain>-deploy.log` and print the ten factory addresses at the end. Run them from the repo root with the deployer's key in `PRIVATE_KEY`:
+`script/deploy-monad.sh`, `script/deploy-base.sh` (Base Sepolia) and `script/deploy-hyperevm.sh` (HyperEVM testnet) run the ten factory deploy scripts, the WrapperFactory's and `DeployLaunchFactory` (DistributionFactory, VaultFactory and the Launcher, approving the token models' factories from the same run) in a row with each chain's settings (the Delegate factory gets the chain's Pyth Entropy adapter for tied seats), append the output to `<chain>-deploy.log` and print the factory addresses at the end. Run them from the repo root with the deployer's key in `PRIVATE_KEY`:
 
 ```bash
 export PRIVATE_KEY=0x...
@@ -258,7 +316,7 @@ Each stops at the first model that fails; remove the models already deployed fro
 
 The log appends on every run, so with repeated runs the last address listed for a factory is the current one.
 
-`GuardWrapper` and `NFTMarketplaceWrapper` have no deploy scripts: they are per-DAO and the bot deploys them on demand (`/deployguardwrapper`, `/deploynftwrapper`).
+`GuardWrapper`, `NFTMarketplaceWrapper` and `StakeConverter` are per-DAO clones made by the network's `WrapperFactory` (`script/DeployWrapperFactory.s.sol`, run last by the three chain scripts). The bot creates them through it.
 
 Oracle and randomness adapters are standalone, one-time deployments per network. Each takes Pyth's own contract address, copied from Pyth's docs, and its constructor rejects an address that isn't one:
 
@@ -281,6 +339,8 @@ DAOs are created from a deployed factory with the matching `Create<Model>DAO.s.s
 ## Deployed addresses
 
 Only factory addresses need to be configured anywhere; implementation addresses are baked into each factory's immutable storage at deployment.
+
+**The addresses below predate token changes, consent locks, the converter and the clone-based wrappers** (per-proposal tokens, Board keeping the token, `createStaking`/`createTokenForSwitch`, `WrapperFactory`). Those need every factory and the WrapperFactory redeployed on each network (the chain scripts above); DAOs from the old factories keep the old behaviour.
 
 ### Monad Testnet
 

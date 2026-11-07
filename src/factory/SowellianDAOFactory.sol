@@ -38,6 +38,7 @@ contract SowellianDAOFactory {
     mapping(address => uint256) public switchNonce;
 
     event DAOSwitched(uint256 indexed daoId, address indexed previousGovernance, address governance, address treasury);
+    event StakingCreated(address indexed deployer, address indexed token, address staking);
 
     event DAOCreated(uint256 indexed daoId, address indexed creator, address governance, address treasury, address token);
 
@@ -109,6 +110,49 @@ contract SowellianDAOFactory {
         _recordDAO(name, stakedToken, token, governance, treasury);
         predecessorOf[governance] = msg.sender;
         emit DAOSwitched(daoCount, msg.sender, governance, treasury);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    NEW TOKENS AND STAKING CONTRACTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Creates a staking contract for `token` owned by `owner`, at
+    ///         predictStaking(msg.sender, salt). A DAO changing its token
+    ///         calls it from a proposal, then points its governance at it
+    ///         (setGovernanceToken). Anyone can call it; the contract is
+    ///         useless until a governance uses it.
+    function createStaking(address token, address owner, bytes32 salt) external returns (address staking) {
+        staking = DAOFactoryLib.createStaking(stakedGovernanceTokenImplementation, token, owner, salt);
+        emit StakingCreated(msg.sender, token, staking);
+    }
+
+    function predictStaking(address deployer, bytes32 salt) external view returns (address) {
+        return DAOFactoryLib.predictStaking(stakedGovernanceTokenImplementation, deployer, salt);
+    }
+
+    /// @notice Creates a token (its whole initial supply minted to
+    ///         `treasury`) and its staking contract, both owned by the
+    ///         caller: for a DAO without a token switching to this model.
+    ///         The switch proposal's later actions hand both to the new
+    ///         governance.
+    function createTokenForSwitch(
+        string calldata name,
+        string calldata symbol,
+        uint256 initialSupply,
+        uint256 maxSupply,
+        address treasury,
+        bytes32 salt
+    ) external returns (address token, address staking) {
+        (token, staking) = DAOFactoryLib.createTokenForSwitch(
+            governanceTokenImplementation, stakedGovernanceTokenImplementation, name, symbol, initialSupply, maxSupply, treasury, salt
+        );
+        emit StakingCreated(msg.sender, token, staking);
+    }
+
+    /// @notice Where createTokenForSwitch(…, salt) called by `deployer` puts the token and its staking contract.
+    function predictTokenForSwitch(address deployer, bytes32 salt) external view returns (address token, address staking) {
+        token = DAOFactoryLib.predictToken(governanceTokenImplementation, deployer, salt);
+        staking = DAOFactoryLib.predictStaking(stakedGovernanceTokenImplementation, deployer, salt);
     }
 
     /// @notice The address the next switch of `previousGovernance` to this

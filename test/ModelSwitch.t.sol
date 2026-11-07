@@ -9,6 +9,7 @@ import {Treasury} from "../src/treasury/Treasury.sol";
 import {ITreasury} from "../src/interfaces/ITreasury.sol";
 
 import {Governance} from "../src/governance/Governance.sol";
+import {ProposalThresholdNotMet} from "../src/governance/GovernanceErrors.sol";
 import {QuadraticGovernance} from "../src/governance/quadratic/QuadraticGovernance.sol";
 import {LiquidGovernance} from "../src/governance/liquid/LiquidGovernance.sol";
 import {OptimisticGovernance} from "../src/governance/optimistic/OptimisticGovernance.sol";
@@ -33,6 +34,10 @@ import {DelegateDAOFactory} from "../src/factory/DelegateDAOFactory.sol";
 import {SortitionDAOFactory} from "../src/factory/SortitionDAOFactory.sol";
 import {DecisionMarketsDAOFactory} from "../src/factory/DecisionMarketsDAOFactory.sol";
 import {BoardDAOFactory} from "../src/factory/BoardDAOFactory.sol";
+import {WrapperFactory} from "../src/wrapper/WrapperFactory.sol";
+import {GuardWrapper} from "../src/wrapper/GuardWrapper.sol";
+import {NFTMarketplaceWrapper} from "../src/marketplace/NFTMarketplaceWrapper.sol";
+import {StakeConverter} from "../src/converter/StakeConverter.sol";
 
 import "../src/governance/Types.sol";
 
@@ -76,6 +81,7 @@ contract ModelSwitchTest is Test {
     DecisionMarketsDAOFactory internal dmFactory;
     BoardDAOFactory internal boardFactory;
     SwitchRandomnessSource internal randomness;
+    WrapperFactory internal wrapperFactory;
 
     Governance internal gov;
     Treasury internal treasury;
@@ -108,7 +114,7 @@ contract ModelSwitchTest is Test {
         convictionFactory =
             new ConvictionDAOFactory(tokenImpl, stakingImpl, treasuryImpl, address(new ConvictionGovernance()));
         delegateFactory =
-            new DelegateDAOFactory(tokenImpl, stakingImpl, treasuryImpl, address(new DelegateGovernance()));
+            new DelegateDAOFactory(tokenImpl, stakingImpl, treasuryImpl, address(new DelegateGovernance()), address(0));
         sortitionFactory =
             new SortitionDAOFactory(tokenImpl, stakingImpl, treasuryImpl, address(new SortitionGovernance()));
         dmFactory = new DecisionMarketsDAOFactory(
@@ -123,6 +129,9 @@ contract ModelSwitchTest is Test {
         );
         boardFactory = new BoardDAOFactory(treasuryImpl, address(new BoardGovernance()));
         randomness = new SwitchRandomnessSource();
+        wrapperFactory = new WrapperFactory(
+            address(new GuardWrapper()), address(new NFTMarketplaceWrapper()), address(new StakeConverter())
+        );
 
         council.push(alice);
         council.push(bob);
@@ -519,6 +528,12 @@ contract ModelSwitchTest is Test {
         );
         vm.prank(alice);
         uint256 id = conviction.propose(abi.decode(abi.encode(pay), (ConvictionGovernance.ProposalAction[])), "ipfs://c");
+        // A lock needs the member's consent.
+        vm.prank(alice);
+        vm.expectRevert(StakedGovernanceToken.LockerNotApproved.selector);
+        conviction.support(id);
+        vm.prank(alice);
+        staking.approveLocker(address(conviction), true);
         vm.prank(alice);
         conviction.support(id);
         assertEq(staking.lockedBalance(alice), 150_000 ether);
@@ -618,6 +633,394 @@ contract ModelSwitchTest is Test {
 
     function test_CreateDAO_HandsStakingToGovernance() public view {
         assertEq(staking.owner(), address(gov));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            CHANGING THE TOKEN WITHOUT CHANGING GOVERNANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev One proposal's actions: a new token (supply to the Treasury)
+    ///      and its staking contract, then the governance pointed at it.
+    function _tokenChangeActions(address governance, bytes32 salt)
+        internal
+        view
+        returns (ProposalAction[] memory actions, address newToken, address newStaking)
+    {
+        (newToken, newStaking) = twFactory.predictTokenForSwitch(governance, salt);
+        actions = new ProposalAction[](2);
+        actions[0] = ProposalAction(
+            address(twFactory),
+            0,
+            abi.encodeCall(twFactory.createTokenForSwitch, ("New Token", "NEW", 1_000_000 ether, MAX_SUPPLY, address(treasury), salt))
+        );
+        actions[1] = ProposalAction(governance, 0, abi.encodeCall(Governance.setGovernanceToken, (newStaking)));
+    }
+
+    /// @dev Gives `account` `amount` of `newToken` from the Treasury and stakes it in `newStaking`.
+    function _stakeNew(address newToken, address newStaking, address account, uint256 amount) internal {
+        vm.prank(address(treasury));
+        GovernanceToken(newToken).transfer(account, amount);
+        vm.startPrank(account);
+        GovernanceToken(newToken).approve(newStaking, amount);
+        StakedGovernanceToken(newStaking).stake(amount);
+        vm.stopPrank();
+        vm.roll(vm.getBlockNumber() + 1);
+    }
+
+    function test_TokenChange_OpenProposalsKeepTheirToken() public {
+        ProposalAction[] memory pay = new ProposalAction[](1);
+        pay[0] = ProposalAction(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 1 ether)));
+        vm.prank(alice);
+        uint256 open = gov.propose(pay, "ipfs://open");
+        assertEq(gov.proposalToken(open), address(staking));
+
+        (ProposalAction[] memory change, address newToken, address newStaking) = _tokenChangeActions(address(gov), "t1");
+        _executeAs(address(gov), change);
+        assertEq(gov.governanceToken(), newStaking, "same governance, new token");
+        assertEq(GovernanceToken(newToken).balanceOf(address(treasury)), 1_000_000 ether);
+        assertEq(GovernanceToken(newToken).owner(), address(gov));
+        assertEq(StakedGovernanceToken(newStaking).owner(), address(gov));
+        assertEq(address(StakedGovernanceToken(newStaking).underlying()), newToken);
+
+        // The open proposal still votes and counts quorum in the old token.
+        vm.roll(vm.getBlockNumber() + 2);
+        vm.prank(alice);
+        assertEq(gov.castVote(open, VoteType.For), 150_000 ether);
+        vm.roll(vm.getBlockNumber() + 101);
+        gov.queueProposal(open);
+        vm.warp(block.timestamp + 1 days + 1);
+        gov.executeProposal(open);
+        assertEq(recipient.balance, 1 ether);
+
+        // New proposals need stake in the new token.
+        vm.prank(alice);
+        vm.expectRevert(ProposalThresholdNotMet.selector);
+        gov.propose(pay, "ipfs://needs-new-stake");
+        _stakeNew(newToken, newStaking, alice, 10 ether);
+        vm.prank(alice);
+        uint256 next = gov.propose(pay, "ipfs://new-token");
+        assertEq(gov.proposalToken(next), newStaking);
+
+        // Old stake is still the members' to take out.
+        vm.prank(bob);
+        staking.unstake(100_000 ether);
+        assertEq(token.balanceOf(bob), 100_000 ether);
+    }
+
+    function test_TokenChange_ConverterMovesStakeAcross() public {
+        (ProposalAction[] memory change, address newToken, address newStaking) = _tokenChangeActions(address(gov), "t2");
+        address converter = wrapperFactory.predictConverter(address(gov), "c");
+        ProposalAction[] memory actions = new ProposalAction[](4);
+        actions[0] = change[0];
+        actions[1] = change[1];
+        actions[2] = ProposalAction(
+            address(wrapperFactory),
+            0,
+            abi.encodeCall(wrapperFactory.createConverter, (address(staking), newStaking, 2, 1, address(treasury), "c"))
+        );
+        actions[3] = ProposalAction(address(treasury), 0, abi.encodeCall(Treasury.transferERC20, (newToken, converter, 250_000 ether)));
+        _executeAs(address(gov), actions);
+        StakeConverter c = StakeConverter(converter);
+        assertTrue(c.open());
+
+        // Alice converts 100k old stake into 200k new, in one call.
+        vm.startPrank(alice);
+        staking.approve(converter, 100_000 ether);
+        assertEq(c.convert(100_000 ether), 200_000 ether);
+        vm.stopPrank();
+        assertEq(staking.balanceOf(alice), 50_000 ether);
+        assertEq(StakedGovernanceToken(newStaking).balanceOf(alice), 200_000 ether);
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(StakedGovernanceToken(newStaking).getVotes(alice), 200_000 ether);
+        assertEq(token.balanceOf(address(treasury)), 100_000 ether, "the old tokens go to the Treasury");
+
+        // Only what's funded: 50k left buys 25k old.
+        vm.startPrank(bob);
+        staking.approve(converter, 100_000 ether);
+        vm.expectRevert(StakeConverter.Underfunded.selector);
+        c.convert(100_000 ether);
+        c.convert(25_000 ether);
+        vm.stopPrank();
+
+        vm.prank(carol);
+        staking.approve(converter, 1 ether);
+
+        // Only the DAO closes it; what's left goes back to the Treasury.
+        vm.prank(alice);
+        vm.expectRevert(StakeConverter.Unauthorized.selector);
+        c.close();
+        uint256 before = GovernanceToken(newToken).balanceOf(address(treasury));
+        vm.prank(address(gov));
+        c.close();
+        assertEq(GovernanceToken(newToken).balanceOf(converter), 0);
+        assertEq(GovernanceToken(newToken).balanceOf(address(treasury)), before);
+        vm.prank(carol);
+        vm.expectRevert(StakeConverter.ConverterClosed.selector);
+        c.convert(1 ether);
+    }
+
+    function test_TokenChange_ConvictionLocksStayOnTheirToken() public {
+        ConvictionGovernance conviction = ConvictionGovernance(_switch(Model.Conviction, address(gov)));
+        ProposalAction[] memory pay = new ProposalAction[](1);
+        pay[0] = ProposalAction(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 0)));
+        ConvictionGovernance.ProposalAction[] memory cpay = abi.decode(abi.encode(pay), (ConvictionGovernance.ProposalAction[]));
+        vm.prank(alice);
+        uint256 old = conviction.propose(cpay, "ipfs://old");
+        vm.startPrank(alice);
+        staking.approveLocker(address(conviction), true);
+        conviction.support(old);
+        vm.stopPrank();
+
+        // New token, its staking contract locked by the same governance.
+        (address newToken, address newStaking) = convictionFactory.predictTokenForSwitch(address(conviction), "t3");
+        ProposalAction[] memory change = new ProposalAction[](3);
+        change[0] = ProposalAction(
+            address(convictionFactory),
+            0,
+            abi.encodeCall(convictionFactory.createTokenForSwitch, ("New", "NEW", 1_000_000 ether, MAX_SUPPLY, address(treasury), "t3"))
+        );
+        change[1] = ProposalAction(newStaking, 0, abi.encodeCall(StakedGovernanceToken.setAuthorizedLocker, (address(conviction))));
+        change[2] = ProposalAction(address(conviction), 0, abi.encodeCall(ConvictionGovernance.setGovernanceToken, (newStaking)));
+        _executeAs(address(conviction), change);
+
+        _stakeNew(newToken, newStaking, alice, 10 ether);
+        vm.prank(alice);
+        uint256 fresh = conviction.propose(cpay, "ipfs://new");
+        assertEq(conviction.proposalToken(fresh), newStaking);
+
+        // Moving support releases the old token's lock and locks the new one.
+        vm.startPrank(alice);
+        StakedGovernanceToken(newStaking).approveLocker(address(conviction), true);
+        conviction.support(fresh);
+        vm.stopPrank();
+        assertEq(staking.lockedBalance(alice), 0);
+        assertEq(StakedGovernanceToken(newStaking).lockedBalance(alice), 10 ether);
+        vm.prank(alice);
+        conviction.withdrawSupport();
+        assertEq(StakedGovernanceToken(newStaking).lockedBalance(alice), 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        BOARD AND THE DAO'S TOKEN
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Board_KeepsTheTokenAndChangesIt() public {
+        BoardGovernance board = BoardGovernance(_switch(Model.Board, address(gov)));
+        assertEq(board.governanceToken(), address(staking));
+        assertEq(board.underlyingToken(), address(token));
+
+        (address newToken, address newStaking) = twFactory.predictTokenForSwitch(address(board), "b1");
+        ProposalAction[] memory change = new ProposalAction[](2);
+        change[0] = ProposalAction(
+            address(twFactory),
+            0,
+            abi.encodeCall(twFactory.createTokenForSwitch, ("New", "NEW", 1_000_000 ether, MAX_SUPPLY, address(treasury), "b1"))
+        );
+        change[1] = ProposalAction(address(board), 0, abi.encodeCall(BoardGovernance.setGovernanceToken, (newStaking)));
+        _executeAs(address(board), change);
+        assertEq(board.governanceToken(), newStaking);
+        assertEq(board.underlyingToken(), newToken);
+
+        vm.expectRevert(BoardGovernance.Unauthorized.selector);
+        board.setGovernanceToken(address(staking));
+    }
+
+    function test_BoardBornDAO_SwitchesIntoATokenModelWithANewToken() public {
+        address[] memory signers = new address[](2);
+        signers[0] = alice;
+        signers[1] = bob;
+        vm.prank(creator);
+        BoardGovernance board = BoardGovernance(boardFactory.createDAO("Board-born", boardConfig(), signers));
+        Treasury t = Treasury(payable(board.treasury()));
+        assertEq(board.governanceToken(), address(0));
+
+        (address newToken, address newStaking) = twFactory.predictTokenForSwitch(address(board), "born");
+        address predicted = twFactory.predictSwitchGovernance(address(board));
+        ProposalAction[] memory actions = new ProposalAction[](5);
+        actions[0] = ProposalAction(
+            address(twFactory),
+            0,
+            abi.encodeCall(twFactory.createTokenForSwitch, ("Born", "BRN", 1_000_000 ether, MAX_SUPPLY, address(t), "born"))
+        );
+        actions[1] = ProposalAction(
+            address(twFactory), 0, abi.encodeCall(twFactory.createForSwitch, ("Board-born", address(t), newToken, newStaking, twConfig(), predicted))
+        );
+        actions[2] = ProposalAction(address(t), 0, abi.encodeCall(Treasury.transferGovernance, (predicted)));
+        actions[3] = ProposalAction(newToken, 0, abi.encodeWithSignature("transferOwnership(address)", predicted));
+        actions[4] = ProposalAction(newStaking, 0, abi.encodeCall(StakedGovernanceToken.transferOwnership, (predicted)));
+        _executeAs(address(board), actions);
+
+        Governance g = Governance(predicted);
+        assertEq(t.governance(), predicted);
+        assertEq(g.governanceToken(), newStaking);
+        assertEq(GovernanceToken(newToken).owner(), predicted);
+        assertEq(StakedGovernanceToken(newStaking).owner(), predicted);
+        assertEq(GovernanceToken(newToken).balanceOf(address(t)), 1_000_000 ether, "the supply sits in the Treasury");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    THE SECURITY COUNCIL (GUARDWRAPPER)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Turns a 2-of-3 council on in one proposal: create the wrapper,
+    ///      hand it the Treasury, token and staking contract.
+    function _councilOn(address governance) internal returns (GuardWrapper w) {
+        address predicted = wrapperFactory.predictGuardWrapper(governance, "council");
+        ProposalAction[] memory actions = new ProposalAction[](4);
+        actions[0] = ProposalAction(
+            address(wrapperFactory), 0, abi.encodeCall(wrapperFactory.createGuardWrapper, (governance, council, 2, 30 days, "council"))
+        );
+        actions[1] = ProposalAction(address(treasury), 0, abi.encodeCall(Treasury.transferGovernance, (predicted)));
+        actions[2] = ProposalAction(address(token), 0, abi.encodeWithSignature("transferOwnership(address)", predicted));
+        actions[3] = ProposalAction(address(staking), 0, abi.encodeCall(StakedGovernanceToken.transferOwnership, (predicted)));
+        _executeAs(governance, actions);
+        w = GuardWrapper(payable(predicted));
+    }
+
+    function _batch(GuardWrapper w, address governance, GuardWrapper.Call[] memory calls) internal returns (uint256 id) {
+        vm.prank(governance);
+        id = w.proposeBatch(calls);
+    }
+
+    function test_Council_OnInOneProposal_AndTreasuryActionsNeedIt() public {
+        GuardWrapper w = _councilOn(address(gov));
+        assertTrue(wrapperFactory.isFromFactory(address(w)));
+        assertEq(w.governance(), address(gov));
+        _assertHandedOver(address(w));
+
+        // Governance alone can't move funds any more.
+        vm.prank(address(gov));
+        vm.expectRevert();
+        treasury.transferETH(payable(recipient), 1 ether);
+
+        vm.prank(address(gov));
+        uint256 id = w.proposeInstruction(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 1 ether)));
+        vm.prank(alice);
+        w.confirmInstruction(id);
+        assertEq(recipient.balance, 0, "1 of 2");
+        vm.prank(bob);
+        w.confirmInstruction(id);
+        assertEq(recipient.balance, 1 ether);
+    }
+
+    function test_Council_SwitchKeepsTheCouncil() public {
+        GuardWrapper w = _councilOn(address(gov));
+        (address factory, address next, bytes memory deploy) = _deployCall(Model.Conviction, address(gov));
+
+        // The factory accepts a caller whose Treasury answers to its council.
+        vm.prank(address(gov));
+        (bool ok,) = factory.call(deploy);
+        assertTrue(ok);
+
+        GuardWrapper.Call[] memory calls = new GuardWrapper.Call[](2);
+        calls[0] = GuardWrapper.Call(address(w), 0, abi.encodeCall(GuardWrapper.setGovernance, (next)));
+        calls[1] = GuardWrapper.Call(address(staking), 0, abi.encodeCall(StakedGovernanceToken.setAuthorizedLocker, (next)));
+        uint256 id = _batch(w, address(gov), calls);
+        assertEq(w.governance(), address(gov), "nothing until the council confirms");
+        vm.prank(alice);
+        w.confirmInstruction(id);
+        vm.prank(carol);
+        w.confirmInstruction(id);
+
+        assertEq(w.governance(), next, "one step");
+        assertEq(staking.authorizedLocker(), next);
+        _assertHandedOver(address(w));
+
+        // The new governance works through the same council.
+        vm.prank(next);
+        id = w.proposeInstruction(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 2 ether)));
+        vm.prank(bob);
+        w.confirmInstruction(id);
+        vm.prank(carol);
+        w.confirmInstruction(id);
+        assertEq(recipient.balance, 2 ether);
+    }
+
+    function test_Council_RejectedSwitchChangesNothing() public {
+        GuardWrapper w = _councilOn(address(gov));
+        (address factory, address next, bytes memory deploy) = _deployCall(Model.Quadratic, address(gov));
+        vm.prank(address(gov));
+        (bool ok,) = factory.call(deploy);
+        assertTrue(ok);
+        GuardWrapper.Call[] memory calls = new GuardWrapper.Call[](1);
+        calls[0] = GuardWrapper.Call(address(w), 0, abi.encodeCall(GuardWrapper.setGovernance, (next)));
+        uint256 id = _batch(w, address(gov), calls);
+        vm.prank(alice);
+        w.rejectInstruction(id);
+        vm.prank(bob);
+        w.rejectInstruction(id);
+        vm.prank(carol);
+        vm.expectRevert(GuardWrapper.InstructionAlreadyRejected.selector);
+        w.confirmInstruction(id);
+        assertEq(w.governance(), address(gov), "the new governance controls nothing");
+    }
+
+    function test_Council_OffNeedsTheCouncil_OrANewOneAfterTenure() public {
+        GuardWrapper w = _councilOn(address(gov));
+        GuardWrapper.Call[] memory off = new GuardWrapper.Call[](3);
+        off[0] = GuardWrapper.Call(address(treasury), 0, abi.encodeCall(Treasury.transferGovernance, (address(gov))));
+        off[1] = GuardWrapper.Call(address(token), 0, abi.encodeWithSignature("transferOwnership(address)", address(gov)));
+        off[2] = GuardWrapper.Call(address(staking), 0, abi.encodeCall(StakedGovernanceToken.transferOwnership, (address(gov))));
+        uint256 id = _batch(w, address(gov), off);
+        vm.prank(alice);
+        w.rejectInstruction(id);
+        vm.prank(bob);
+        w.rejectInstruction(id);
+        _assertHandedOver(address(w));
+
+        // Governance can't replace the signers before their tenure ends...
+        address[] memory fresh = new address[](1);
+        fresh[0] = recipient;
+        vm.prank(address(gov));
+        vm.expectRevert(GuardWrapper.TenureNotYetEnded.selector);
+        w.replaceSigners(fresh, 1);
+
+        // ...but can after, without them, and the new council turns it off.
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(address(gov));
+        w.replaceSigners(fresh, 1);
+        id = _batch(w, address(gov), off);
+        vm.prank(recipient);
+        w.confirmInstruction(id);
+        _assertHandedOver(address(gov));
+    }
+
+    function test_Council_BatchIsAllOrNothing() public {
+        GuardWrapper w = _councilOn(address(gov));
+        GuardWrapper.Call[] memory calls = new GuardWrapper.Call[](2);
+        calls[0] = GuardWrapper.Call(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 1 ether)));
+        calls[1] = GuardWrapper.Call(address(treasury), 0, abi.encodeCall(Treasury.transferETH, (payable(recipient), 100 ether)));
+        uint256 id = _batch(w, address(gov), calls);
+        vm.prank(alice);
+        w.confirmInstruction(id);
+        vm.prank(bob);
+        vm.expectRevert(GuardWrapper.ExecutionFailed.selector);
+        w.confirmInstruction(id);
+        assertEq(recipient.balance, 0);
+
+        vm.expectRevert(GuardWrapper.Unauthorized.selector);
+        w.runBatch(calls);
+        vm.prank(alice);
+        vm.expectRevert(GuardWrapper.Unauthorized.selector);
+        w.proposeBatch(calls);
+    }
+
+    function test_Wrappers_AreClonesAtPredictedAddresses() public {
+        address nft = wrapperFactory.predictNFTWrapper(address(gov), "n");
+        vm.prank(address(gov));
+        assertEq(wrapperFactory.createNFTWrapper(address(gov), address(treasury), "n"), nft);
+        assertEq(NFTMarketplaceWrapper(payable(nft)).governance(), address(gov));
+        assertLt(nft.code.length, 100, "a minimal proxy");
+
+        // A switch hands the NFT wrapper over too.
+        vm.prank(address(gov));
+        NFTMarketplaceWrapper(payable(nft)).setGovernance(alice);
+        assertEq(NFTMarketplaceWrapper(payable(nft)).governance(), alice);
+
+        // Implementations can't be taken over.
+        GuardWrapper impl = GuardWrapper(payable(wrapperFactory.guardWrapperImplementation()));
+        vm.expectRevert();
+        impl.initialize(alice, council, 1, 1 days);
     }
 
     function executeAsExternal(address governance, ProposalAction[] memory actions) external {

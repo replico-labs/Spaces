@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 /// @title GuardWrapper
 /// @author Marvin Sunday
 /// @notice A standalone circuit-breaker that sits between any governance
@@ -35,7 +37,17 @@ pragma solidity ^0.8.24;
 ///      A compromised governance can never swap itself out for an
 ///      attacker's contract without signers getting the chance to see
 ///      and block it first.
-contract GuardWrapper {
+///
+///      Clone-ready: one implementation per network, a tiny EIP-1167 clone
+///      per DAO made by WrapperFactory at a predictable address, set up
+///      once with initialize(). That predictability is what lets one
+///      proposal create the wrapper and hand it the Treasury, token and
+///      staking contract in the same execution. proposeBatch() sends
+///      several calls as one instruction, confirmed and run together -
+///      a model switch under a council (setGovernance plus the staking
+///      contract's new locker) or turning the council off (handing
+///      everything back) happens in one step or not at all.
+contract GuardWrapper is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -98,6 +110,8 @@ contract GuardWrapper {
     error NotConfirmed();
     error AlreadyRejected();
     error ExecutionFailed();
+    error EmptyBatch();
+    error DuplicateSigner();
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -130,15 +144,20 @@ contract GuardWrapper {
     }
 
     /*//////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                            INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    /// @dev The implementation itself can never be initialized; only clones.
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address governance_,
-        address[] memory initialSigners_,
+        address[] calldata initialSigners_,
         uint256 requiredApprovals_,
         uint256 tenureLength_
-    ) {
+    ) external initializer {
         if (governance_ == address(0)) revert ZeroAddress();
         if (tenureLength_ == 0) revert TenureNotYetEnded();
         if (
@@ -156,6 +175,7 @@ contract GuardWrapper {
         for (uint256 i = 0; i < initialSigners_.length; ++i) {
             address signer = initialSigners_[i];
             if (signer == address(0)) revert ZeroAddress();
+            if (isSigner[signer]) revert DuplicateSigner();
             isSigner[signer] = true;
             signers.push(signer);
         }
@@ -185,6 +205,41 @@ contract GuardWrapper {
         instruction.data = data;
 
         emit InstructionProposed(instructionId, target, value);
+    }
+
+    /// @notice One call in a batch.
+    struct Call {
+        address target;
+        uint256 value;
+        bytes data;
+    }
+
+    /// @notice Governance proposes several calls as one instruction:
+    ///         signers confirm or reject them together, and they run in
+    ///         order, all or nothing. Stored as an instruction to this
+    ///         contract's own runBatch(), so it goes through exactly the
+    ///         same pipeline (and getInstruction shows it as such).
+    function proposeBatch(Call[] calldata calls) external onlyGovernance returns (uint256 instructionId) {
+        if (calls.length == 0) revert EmptyBatch();
+        for (uint256 i = 0; i < calls.length; ++i) {
+            if (calls[i].target == address(0)) revert ZeroAddress();
+        }
+
+        instructionId = ++instructionCount;
+        Instruction storage instruction = _instructions[instructionId];
+        instruction.target = address(this);
+        instruction.data = abi.encodeCall(this.runBatch, (calls));
+
+        emit InstructionProposed(instructionId, address(this), 0);
+    }
+
+    /// @notice Runs a confirmed batch. Only through an instruction this
+    ///         contract executes (proposeBatch), never directly.
+    function runBatch(Call[] calldata calls) external payable onlySelf {
+        for (uint256 i = 0; i < calls.length; ++i) {
+            (bool ok, ) = calls[i].target.call{value: calls[i].value}(calls[i].data);
+            if (!ok) revert ExecutionFailed();
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

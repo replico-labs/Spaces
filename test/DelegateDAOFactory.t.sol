@@ -56,7 +56,8 @@ contract DelegateDAOFactoryTest is Test {
             address(governanceTokenImplementation),
             address(stakedGovernanceTokenImplementation),
             address(treasuryImplementation),
-            address(delegateGovernanceImplementation)
+            address(delegateGovernanceImplementation),
+            address(0)
         );
 
         initialCouncil.push(council1);

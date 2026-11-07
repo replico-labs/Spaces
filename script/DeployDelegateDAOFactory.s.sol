@@ -42,7 +42,9 @@ contract DeployDelegateDAOFactory is Script {
             address(governanceTokenImplementation),
             address(stakedGovernanceTokenImplementation),
             address(treasuryImplementation),
-            address(delegateGovernanceImplementation)
+            address(delegateGovernanceImplementation),
+            // The Pyth Entropy adapter (DeployPythEntropyAdapter) settles tied council seats; unset, ties go to whoever declared first.
+            vm.envOr("RANDOMNESS_SOURCE", address(0))
         );
 
         vm.stopBroadcast();

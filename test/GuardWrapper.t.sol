@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {GuardWrapper} from "../src/wrapper/GuardWrapper.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @dev A minimal real target contract - not a mock of behavior, an
 ///      actual contract with genuine state, so tests confirm the
@@ -45,9 +46,23 @@ contract GuardWrapperTest is Test {
     uint256 internal constant REQUIRED_APPROVALS = 2;
     uint256 internal constant TENURE_LENGTH = 30 days;
 
+    address internal implementation;
+
+    /// @dev A bare clone, for checking initialize() refusals.
+    function _bare() internal returns (GuardWrapper w) {
+        w = GuardWrapper(payable(Clones.clone(implementation)));
+    }
+
+    /// @dev A clone of the implementation, set up as WrapperFactory does.
+    function _deploy(address gov, address[] memory signers_, uint256 required, uint256 tenure) internal returns (GuardWrapper w) {
+        w = GuardWrapper(payable(Clones.clone(implementation)));
+        w.initialize(gov, signers_, required, tenure);
+    }
+
     function setUp() public {
         initialSigners = [signer1, signer2, signer3];
-        wrapper = new GuardWrapper(governance, initialSigners, REQUIRED_APPROVALS, TENURE_LENGTH);
+        implementation = address(new GuardWrapper());
+        wrapper = _deploy(governance, initialSigners, REQUIRED_APPROVALS, TENURE_LENGTH);
         target = new TestTarget();
         vm.deal(address(wrapper), 10 ether);
     }
@@ -71,31 +86,36 @@ contract GuardWrapperTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroGovernance() public {
+        GuardWrapper fresh = _bare();
         vm.expectRevert(GuardWrapper.ZeroAddress.selector);
-        new GuardWrapper(address(0), initialSigners, REQUIRED_APPROVALS, TENURE_LENGTH);
+        fresh.initialize(address(0), initialSigners, REQUIRED_APPROVALS, TENURE_LENGTH);
     }
 
     function test_Constructor_RevertsOnZeroTenureLength() public {
+        GuardWrapper fresh = _bare();
         vm.expectRevert(GuardWrapper.TenureNotYetEnded.selector);
-        new GuardWrapper(governance, initialSigners, REQUIRED_APPROVALS, 0);
+        fresh.initialize(governance, initialSigners, REQUIRED_APPROVALS, 0);
     }
 
     function test_Constructor_RevertsOnZeroRequiredApprovals() public {
+        GuardWrapper fresh = _bare();
         vm.expectRevert(GuardWrapper.InvalidRequiredApprovals.selector);
-        new GuardWrapper(governance, initialSigners, 0, TENURE_LENGTH);
+        fresh.initialize(governance, initialSigners, 0, TENURE_LENGTH);
     }
 
     function test_Constructor_RevertsWhenRequiredApprovalsExceedsSignerCount() public {
+        GuardWrapper fresh = _bare();
         vm.expectRevert(GuardWrapper.InvalidRequiredApprovals.selector);
-        new GuardWrapper(governance, initialSigners, 4, TENURE_LENGTH);
+        fresh.initialize(governance, initialSigners, 4, TENURE_LENGTH);
     }
 
     function test_Constructor_RevertsOnZeroAddressSigner() public {
         address[] memory badSigners = new address[](2);
         badSigners[0] = signer1;
         badSigners[1] = address(0);
+        GuardWrapper fresh = _bare();
         vm.expectRevert(GuardWrapper.ZeroAddress.selector);
-        new GuardWrapper(governance, badSigners, 1, TENURE_LENGTH);
+        fresh.initialize(governance, badSigners, 1, TENURE_LENGTH);
     }
 
     /*//////////////////////////////////////////////////////////////

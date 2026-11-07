@@ -5,6 +5,12 @@ import "../token/GovernanceToken.sol";
 import "../token/StakedGovernanceToken.sol";
 import "../treasury/Treasury.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+/// @dev What the factories need from a GuardWrapper: who it answers to.
+interface IAnswersTo {
+    function governance() external view returns (address);
+}
 
 /// @title DAOFactoryLib
 /// @notice Shared deployment helper used by every per-model DAO factory in
@@ -51,6 +57,7 @@ library DAOFactoryLib {
         // governance once governance exists.
         token = GovernanceToken(governanceTokenImplementation.clone());
         token.initialize(name, symbol, initialSupply, maxSupply, creator, address(this));
+        token.setSetupAuthority(creator); // a launch contract may make a prop firm's vault the minter, in this block
 
         stakedToken = StakedGovernanceToken(stakedGovernanceTokenImplementation.clone());
         stakedToken.initialize(
@@ -62,6 +69,9 @@ library DAOFactoryLib {
 
         treasury = Treasury(payable(treasuryImplementation.clone()));
         treasury.initialize(address(this));
+        // A launch contract creating the DAO may set the allowances its
+        // launch terms agreed, in this block only (a wallet creator gets nothing).
+        treasury.setSetupAuthority(creator);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -75,18 +85,108 @@ library DAOFactoryLib {
 
     /// @dev A switch is called from inside an executed proposal of the
     ///      DAO's current governance, which must still control the
-    ///      Treasury. Staking, when given, must wrap the given token.
+    ///      Treasury: directly, or through a security council (a
+    ///      GuardWrapper that controls the Treasury and answers to the
+    ///      caller). Staking, when given, must wrap the given token.
     function checkSwitch(address treasury, address token, address stakedToken) internal view {
-        if (Treasury(payable(treasury)).governance() != msg.sender) revert NotTreasuryGovernance();
+        if (!controls(Treasury(payable(treasury)).governance())) revert NotTreasuryGovernance();
         if (stakedToken != address(0) && address(StakedGovernanceToken(stakedToken).underlying()) != token) {
             revert StakingTokenMismatch();
         }
     }
 
     /// @dev Locking models need the old governance to own the staking
-    ///      contract, so the same proposal can make the new one its locker.
+    ///      contract (directly or through its council), so the same
+    ///      proposal can make the new one its locker.
     function checkStakingOwned(address stakedToken) internal view {
-        if (StakedGovernanceToken(stakedToken).owner() != msg.sender) revert StakingNotOwned();
+        if (!controls(StakedGovernanceToken(stakedToken).owner())) revert StakingNotOwned();
+    }
+
+    /// @dev True when `holder` is the caller, or a contract that answers
+    ///      to the caller (a GuardWrapper whose governance is the caller).
+    ///      Whatever `holder` is, the DAO itself installed it, so trusting
+    ///      its answer adds nothing an attacker could use.
+    function controls(address holder) internal view returns (bool) {
+        if (holder == msg.sender) return true;
+        if (holder.code.length == 0) return false;
+        try IAnswersTo(holder).governance() returns (address g) {
+            return g == msg.sender;
+        } catch {
+            return false;
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    NEW TOKENS AND STAKING CONTRACTS
+    //////////////////////////////////////////////////////////////*/
+
+    function stakingSalt(address deployer, bytes32 salt) internal pure returns (bytes32) {
+        return keccak256(abi.encode(bytes32("staking"), deployer, salt));
+    }
+
+    function tokenSalt(address deployer, bytes32 salt) internal pure returns (bytes32) {
+        return keccak256(abi.encode(bytes32("token"), deployer, salt));
+    }
+
+    /// @dev A staking contract for `token`, owned by `owner`, at the
+    ///      address predictStaking(msg.sender, salt) gives. For a DAO
+    ///      changing its token (the governance, or its council, as owner).
+    function createStaking(address stakedImplementation, address token, address owner, bytes32 salt)
+        internal
+        returns (address staking)
+    {
+        staking = stakedImplementation.cloneDeterministic(stakingSalt(msg.sender, salt));
+        StakedGovernanceToken(staking).initialize(
+            token,
+            string.concat("Staked ", tokenName(token)),
+            string.concat("s", tokenSymbol(token)),
+            owner
+        );
+    }
+
+    function predictStaking(address stakedImplementation, address deployer, bytes32 salt) internal view returns (address) {
+        return stakedImplementation.predictDeterministicAddress(stakingSalt(deployer, salt), address(this));
+    }
+
+    /// @dev A new GovernanceToken (the whole initial supply minted to the
+    ///      Treasury) and its staking contract, both owned by the caller,
+    ///      at the addresses predictTokenForSwitch(msg.sender, salt) gives.
+    ///      For a DAO with no token (Board-born) moving to a token model:
+    ///      the switch proposal's later actions hand both to the new
+    ///      governance, as they do for an existing token.
+    function createTokenForSwitch(
+        address tokenImplementation,
+        address stakedImplementation,
+        string memory name,
+        string memory symbol,
+        uint256 initialSupply,
+        uint256 maxSupply,
+        address treasury,
+        bytes32 salt
+    ) internal returns (address token, address staking) {
+        token = tokenImplementation.cloneDeterministic(tokenSalt(msg.sender, salt));
+        GovernanceToken(token).initialize(name, symbol, initialSupply, maxSupply, treasury, msg.sender);
+        staking = createStaking(stakedImplementation, token, msg.sender, salt);
+    }
+
+    function predictToken(address tokenImplementation, address deployer, bytes32 salt) internal view returns (address) {
+        return tokenImplementation.predictDeterministicAddress(tokenSalt(deployer, salt), address(this));
+    }
+
+    function tokenName(address token) internal view returns (string memory) {
+        try IERC20Metadata(token).name() returns (string memory n) {
+            return n;
+        } catch {
+            return "Token";
+        }
+    }
+
+    function tokenSymbol(address token) internal view returns (string memory) {
+        try IERC20Metadata(token).symbol() returns (string memory s) {
+            return s;
+        } catch {
+            return "TKN";
+        }
     }
 
     function switchSalt(address previousGovernance, uint256 nonce) internal pure returns (bytes32) {

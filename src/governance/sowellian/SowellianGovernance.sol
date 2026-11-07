@@ -270,6 +270,10 @@ contract SowellianGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken;
+    /// @notice The token each proposal was created with: its votes, bonds
+    ///         and positions all use it, so a token change
+    ///         (setGovernanceToken) leaves open proposals alone.
+    mapping(uint256 => address) public proposalToken;
     address public treasury;
     SowellianConfig internal _config;
 
@@ -381,6 +385,7 @@ contract SowellianGovernance is Initializable {
         p.approvalSnapshotBlock = block.number - 1;
         p.approvalStartBlock = block.number + _config.approvalVotingDelay;
         p.approvalEndBlock = p.approvalStartBlock + _config.approvalVotingPeriod;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
@@ -388,7 +393,7 @@ contract SowellianGovernance is Initializable {
 
         p.proposalBond = _config.proposalBondAmount;
         if (p.proposalBond > 0) {
-            bool ok = IVotesToken(governanceToken).transferFrom(msg.sender, address(this), p.proposalBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transferFrom(msg.sender, address(this), p.proposalBond);
             if (!ok) revert TransferFailed();
         }
 
@@ -410,7 +415,7 @@ contract SowellianGovernance is Initializable {
         if (_hasVotedApproval[proposalId][msg.sender]) revert AlreadyVoted();
         _hasVotedApproval[proposalId][msg.sender] = true;
 
-        weight = IVotesToken(governanceToken).getPastVotes(msg.sender, p.approvalSnapshotBlock);
+        weight = IVotesToken(proposalToken[proposalId]).getPastVotes(msg.sender, p.approvalSnapshotBlock);
 
         if (support == VoteType.For) p.approvalForVotes += weight;
         else if (support == VoteType.Against) p.approvalAgainstVotes += weight;
@@ -428,7 +433,7 @@ contract SowellianGovernance is Initializable {
         if (p.phase != Phase.ApprovalVoting) revert WrongPhase();
         if (block.number <= p.approvalEndBlock) revert VotingNotEnded();
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.approvalSnapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.approvalSnapshotBlock);
         uint256 participation = p.approvalForVotes + p.approvalAgainstVotes + p.approvalAbstainVotes;
         bool quorumMet = totalSupply != 0 && (participation * 10_000) / totalSupply >= _config.approvalQuorumBps;
 
@@ -442,7 +447,7 @@ contract SowellianGovernance is Initializable {
         } else {
             p.phase = Phase.Rejected;
             if (p.proposalBond > 0) {
-                bool ok = IVotesToken(governanceToken).transfer(treasury, p.proposalBond);
+                bool ok = IVotesToken(proposalToken[proposalId]).transfer(treasury, p.proposalBond);
                 if (!ok) revert TransferFailed();
             }
         }
@@ -464,7 +469,7 @@ contract SowellianGovernance is Initializable {
         if (block.timestamp > p.positionsDeadline) revert PositionsWindowClosed();
         if (amount == 0) revert ZeroAmount();
 
-        bool ok = IVotesToken(governanceToken).transferFrom(msg.sender, address(this), amount);
+        bool ok = IVotesToken(proposalToken[proposalId]).transferFrom(msg.sender, address(this), amount);
         if (!ok) revert TransferFailed();
 
         if (side == Side.Yes) {
@@ -535,7 +540,7 @@ contract SowellianGovernance is Initializable {
         // the approval stage, which is all the proposal bond was ever
         // meant to attest to.
         if (p.proposalBond > 0) {
-            bool ok = IVotesToken(governanceToken).transfer(p.proposer, p.proposalBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.proposer, p.proposalBond);
             if (!ok) revert TransferFailed();
         }
 
@@ -562,7 +567,7 @@ contract SowellianGovernance is Initializable {
         p.phase = Phase.ResolutionProposed;
 
         if (p.resolutionBond > 0) {
-            bool ok = IVotesToken(governanceToken).transferFrom(msg.sender, address(this), p.resolutionBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transferFrom(msg.sender, address(this), p.resolutionBond);
             if (!ok) revert TransferFailed();
         }
 
@@ -583,7 +588,7 @@ contract SowellianGovernance is Initializable {
         p.phase = Phase.Adjudicating;
 
         if (p.challengeBond > 0) {
-            bool ok = IVotesToken(governanceToken).transferFrom(msg.sender, address(this), p.challengeBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transferFrom(msg.sender, address(this), p.challengeBond);
             if (!ok) revert TransferFailed();
         }
 
@@ -604,10 +609,10 @@ contract SowellianGovernance is Initializable {
 
         uint256 refund = p.resolutionBond + p.proposalBond;
         if (refund > 0) {
-            bool ok = IVotesToken(governanceToken).transfer(p.resolver, p.resolutionBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.resolver, p.resolutionBond);
             if (!ok) revert TransferFailed();
             if (p.proposalBond > 0) {
-                ok = IVotesToken(governanceToken).transfer(p.proposer, p.proposalBond);
+                ok = IVotesToken(proposalToken[proposalId]).transfer(p.proposer, p.proposalBond);
                 if (!ok) revert TransferFailed();
             }
         }
@@ -635,7 +640,7 @@ contract SowellianGovernance is Initializable {
         if (_hasVotedAdjudication[proposalId][msg.sender]) revert AlreadyVoted();
         _hasVotedAdjudication[proposalId][msg.sender] = true;
 
-        weight = IVotesToken(governanceToken).getPastVotes(msg.sender, p.positionsOpenSnapshotBlock);
+        weight = IVotesToken(proposalToken[proposalId]).getPastVotes(msg.sender, p.positionsOpenSnapshotBlock);
 
         if (vote == Outcome.Success) p.adjudicateSuccessVotes += weight;
         else p.adjudicateFailureVotes += weight;
@@ -651,7 +656,7 @@ contract SowellianGovernance is Initializable {
         if (p.phase != Phase.Adjudicating) revert WrongPhase();
         if (block.number <= p.adjudicationEndBlock) revert AdjudicationNotEnded();
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.positionsOpenSnapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.positionsOpenSnapshotBlock);
         uint256 participation = p.adjudicateSuccessVotes + p.adjudicateFailureVotes;
         bool quorumMet = totalSupply != 0 && (participation * 10_000) / totalSupply >= _config.adjudicationQuorumBps;
 
@@ -669,26 +674,26 @@ contract SowellianGovernance is Initializable {
 
         if (resolverWasRight) {
             if (p.resolutionBond > 0) {
-                bool ok = IVotesToken(governanceToken).transfer(p.resolver, p.resolutionBond);
+                bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.resolver, p.resolutionBond);
                 if (!ok) revert TransferFailed();
             }
             if (p.challengeBond > 0) {
-                bool ok = IVotesToken(governanceToken).transfer(treasury, p.challengeBond);
+                bool ok = IVotesToken(proposalToken[proposalId]).transfer(treasury, p.challengeBond);
                 if (!ok) revert TransferFailed();
             }
         } else {
             if (p.resolutionBond > 0) {
-                bool ok = IVotesToken(governanceToken).transfer(treasury, p.resolutionBond);
+                bool ok = IVotesToken(proposalToken[proposalId]).transfer(treasury, p.resolutionBond);
                 if (!ok) revert TransferFailed();
             }
             if (p.challengeBond > 0) {
-                bool ok = IVotesToken(governanceToken).transfer(p.challenger, p.challengeBond);
+                bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.challenger, p.challengeBond);
                 if (!ok) revert TransferFailed();
             }
         }
 
         if (p.proposalBond > 0) {
-            bool ok = IVotesToken(governanceToken).transfer(p.proposer, p.proposalBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.proposer, p.proposalBond);
             if (!ok) revert TransferFailed();
         }
 
@@ -726,7 +731,7 @@ contract SowellianGovernance is Initializable {
         uint256 payout = winningPool == 0 ? 0 : (stake * totalPool) / winningPool;
 
         if (payout > 0) {
-            bool ok = IVotesToken(governanceToken).transfer(msg.sender, payout);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(msg.sender, payout);
             if (!ok) revert TransferFailed();
         }
 

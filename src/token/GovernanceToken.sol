@@ -27,6 +27,21 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 contract GovernanceToken is Initializable, ERC20VotesUpgradeable, ERC20PermitUpgradeable, OwnableUpgradeable {
     uint256 public maxSupply;
 
+    /// @notice Besides the owner, the one contract that may mint (still
+    ///         within maxSupply): a prop firm's vault, whose shares are this
+    ///         token. Zero for every other DAO.
+    address public minter;
+
+    /// @notice A launch contract that may set the minter in the block the
+    ///         DAO is created (see setSetupAuthority).
+    address public setupAuthority;
+    uint256 public setupBlock;
+
+    event MinterSet(address indexed minter);
+    event SetupAuthoritySet(address indexed authority);
+
+    error NotAllowed();
+
     /// @dev Locks initializers on the implementation contract itself -
     ///      standard OpenZeppelin upgradeable-contracts practice, so
     ///      nobody can call initialize() directly on the implementation
@@ -55,9 +70,28 @@ contract GovernanceToken is Initializable, ERC20VotesUpgradeable, ERC20PermitUpg
         _mint(initialSupplyRecipient_, initialSupply_);
     }
 
-    function mint(address to, uint256 amount) external onlyOwner {
+    function mint(address to, uint256 amount) external {
+        if (msg.sender != owner() && (msg.sender != minter || minter == address(0))) revert NotAllowed();
         require(totalSupply() + amount <= maxSupply, "Max supply exceeded");
         _mint(to, amount);
+    }
+
+    /// @notice Sets the vault that mints this token's shares. The owner (a
+    ///         proposal), or a launch contract in the block it creates the DAO.
+    function setMinter(address minter_) external {
+        if (msg.sender != owner() && !(msg.sender == setupAuthority && block.number == setupBlock)) revert NotAllowed();
+        minter = minter_;
+        emit MinterSet(minter_);
+    }
+
+    /// @notice Called by the factory while it still owns the token: lets a
+    ///         launch contract creating the DAO set the minter in this block.
+    ///         A creator without code (a wallet) is ignored.
+    function setSetupAuthority(address authority) external onlyOwner {
+        if (authority.code.length == 0) return;
+        setupAuthority = authority;
+        setupBlock = block.number;
+        emit SetupAuthoritySet(authority);
     }
 
     function burn(uint256 amount) external {

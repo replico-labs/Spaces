@@ -158,6 +158,13 @@ contract OptimisticGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken;
+    /// @notice The voting token each proposal was created with; votes,
+    ///         quorum and state for that proposal always use it, so a token
+    ///         change (setGovernanceToken) leaves open proposals alone.
+    mapping(uint256 => address) public proposalToken;
+    /// @notice The bond each challenge actually posted, returned or
+    ///         forfeited as posted even if the config changes meanwhile.
+    mapping(uint256 => uint256) public challengeBondPaid;
     address public treasury;
     OptimisticGovernanceConfig internal _config;
 
@@ -234,6 +241,7 @@ contract OptimisticGovernance is Initializable {
         p.createdBlock = block.number;
         p.snapshotBlock = block.number - 1;
         p.challengeDeadline = block.number + _config.challengePeriod;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
@@ -259,10 +267,12 @@ contract OptimisticGovernance is Initializable {
         p.challenger = msg.sender;
         p.votingEndBlock = block.number + _config.votingPeriod;
 
-        bool ok = IVotesToken(governanceToken).transferFrom(msg.sender, address(this), _config.challengeBond);
+        uint256 bond = _config.challengeBond;
+        challengeBondPaid[proposalId] = bond;
+        bool ok = IVotesToken(proposalToken[proposalId]).transferFrom(msg.sender, address(this), bond);
         if (!ok) revert BondTransferFailed();
 
-        emit Challenged(proposalId, msg.sender, _config.challengeBond);
+        emit Challenged(proposalId, msg.sender, bond);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -288,7 +298,7 @@ contract OptimisticGovernance is Initializable {
         receipt.hasVoted = true;
         receipt.support = support;
 
-        weight = IVotesToken(governanceToken).getPastVotes(msg.sender, p.snapshotBlock);
+        weight = IVotesToken(proposalToken[proposalId]).getPastVotes(msg.sender, p.snapshotBlock);
         receipt.weight = weight;
 
         if (support == VoteType.For) p.forVotes += weight;
@@ -329,7 +339,7 @@ contract OptimisticGovernance is Initializable {
         if (p.queuedAt != 0) revert ProposalAlreadyQueued();
         if (p.bondResolved) revert BondAlreadyResolved();
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock);
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
         bool quorumMet = totalSupply != 0 && (participation * 10_000) / totalSupply >= _config.quorumBps;
 
@@ -343,16 +353,16 @@ contract OptimisticGovernance is Initializable {
             p.queuedAt = block.timestamp;
             // Challenge failed to stop a proposal that passed anyway -
             // bond is forfeited to the treasury.
-            bool ok = IVotesToken(governanceToken).transfer(treasury, _config.challengeBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(treasury, challengeBondPaid[proposalId]);
             if (!ok) revert BondTransferFailed();
-            emit BondForfeited(proposalId, p.challenger, _config.challengeBond);
+            emit BondForfeited(proposalId, p.challenger, challengeBondPaid[proposalId]);
             emit ProposalQueued(proposalId, block.timestamp + _config.timelockDelay);
         } else {
             // Challenge correctly caught a proposal that didn't have
             // support - bond is returned.
-            bool ok = IVotesToken(governanceToken).transfer(p.challenger, _config.challengeBond);
+            bool ok = IVotesToken(proposalToken[proposalId]).transfer(p.challenger, challengeBondPaid[proposalId]);
             if (!ok) revert BondTransferFailed();
-            emit BondReturned(proposalId, p.challenger, _config.challengeBond);
+            emit BondReturned(proposalId, p.challenger, challengeBondPaid[proposalId]);
         }
 
         emit ProposalFinalizedAfterChallenge(proposalId, succeeded);
@@ -460,7 +470,7 @@ contract OptimisticGovernance is Initializable {
 
         if (block.number <= p.votingEndBlock) return ProposalState.Active;
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock);
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
         uint256 decisive = p.forVotes + p.againstVotes;
 

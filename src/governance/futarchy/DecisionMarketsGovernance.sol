@@ -172,6 +172,10 @@ contract DecisionMarketsGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken;
+    /// @notice The base token each proposal was seeded and traded in. A
+    ///         token change (setGovernanceToken) only affects new
+    ///         proposals; refunds and reclaimed liquidity use this.
+    mapping(uint256 => address) public proposalBaseToken;
     address public treasury;
     address public wmon;
     address public conditionalTokenImplementation;
@@ -282,19 +286,21 @@ contract DecisionMarketsGovernance is Initializable {
             p.actions.push(actions[i]);
         }
         _pendingSeeds[proposalId] = PendingSeed({ base: baseSeedAmount, quote: msg.value });
+        address baseToken = governanceToken;
+        proposalBaseToken[proposalId] = baseToken;
 
         // Pull the base-token seed from the proposer, and wrap the
         // native coin sent as msg.value into WMON.
-        bool ok = IERC20Orchestrator(governanceToken).transferFrom(msg.sender, address(this), baseSeedAmount);
+        bool ok = IERC20Orchestrator(baseToken).transferFrom(msg.sender, address(this), baseSeedAmount);
         if (!ok) revert TransferFailed();
         WMON(payable(wmon)).deposit{value: msg.value}();
 
-        address baseVault = _deployVault(governanceToken, "Base");
+        address baseVault = _deployVault(baseToken, "Base");
         address quoteVault = _deployVault(wmon, "Quote");
         p.baseVault = baseVault;
         p.quoteVault = quoteVault;
 
-        _approveAndSplit(governanceToken, baseVault, baseSeedAmount);
+        _approveAndSplit(baseToken, baseVault, baseSeedAmount);
         _approveAndSplit(wmon, quoteVault, msg.value);
 
         emit ProposalSeeded(proposalId, msg.sender, baseSeedAmount, msg.value);
@@ -488,7 +494,7 @@ contract DecisionMarketsGovernance is Initializable {
             delete _pendingSeeds[proposalId];
             ConditionalVault(p.baseVault).mergeTokens(seed.base);
             ConditionalVault(p.quoteVault).mergeTokens(seed.quote);
-            if (!IERC20Orchestrator(governanceToken).transfer(p.proposer, seed.base)) revert TransferFailed();
+            if (!IERC20Orchestrator(proposalBaseToken[proposalId]).transfer(p.proposer, seed.base)) revert TransferFailed();
             if (!IERC20Orchestrator(wmon).transfer(p.proposer, seed.quote)) revert TransferFailed();
             emit SeedRefunded(proposalId, seed.base, seed.quote);
         }
@@ -499,8 +505,11 @@ contract DecisionMarketsGovernance is Initializable {
 
     /// @notice Recovers the seed liquidity this contract holds for a
     ///         finalized proposal's two pools, converts it back to real
-    ///         underlying via the now-resolved vaults, and sends it to
-    ///         the treasury. Permissionless, callable once per proposal,
+    ///         underlying via the now-resolved vaults, and returns it to
+    ///         the proposer, who put the seed up. Only what this
+    ///         proposal's pools and vaults give back is paid out, in the
+    ///         base token the proposal was seeded with. Permissionless,
+    ///         callable once per proposal,
     ///         any time after finalization - deliberately not available
     ///         during trading, since pulling liquidity mid-market would
     ///         distort the very TWAP the resolution depends on. Works
@@ -513,6 +522,10 @@ contract DecisionMarketsGovernance is Initializable {
         if (p.liquidityReclaimed) revert AlreadyReclaimed();
         p.liquidityReclaimed = true;
 
+        address baseToken = proposalBaseToken[proposalId];
+        uint256 baseBefore = IERC20Orchestrator(baseToken).balanceOf(address(this));
+        uint256 quoteBefore = IERC20Orchestrator(wmon).balanceOf(address(this));
+
         _burnPoolLiquidity(p.passPool);
         _burnPoolLiquidity(p.failPool);
 
@@ -522,11 +535,11 @@ contract DecisionMarketsGovernance is Initializable {
         ConditionalVault(p.baseVault).redeemTokens();
         ConditionalVault(p.quoteVault).redeemTokens();
 
-        uint256 baseRecovered = IERC20Orchestrator(governanceToken).balanceOf(address(this));
-        uint256 quoteRecovered = IERC20Orchestrator(wmon).balanceOf(address(this));
+        uint256 baseRecovered = IERC20Orchestrator(baseToken).balanceOf(address(this)) - baseBefore;
+        uint256 quoteRecovered = IERC20Orchestrator(wmon).balanceOf(address(this)) - quoteBefore;
 
-        if (baseRecovered > 0) IERC20Orchestrator(governanceToken).transfer(p.proposer, baseRecovered);
-        if (quoteRecovered > 0) IERC20Orchestrator(wmon).transfer(p.proposer, quoteRecovered);
+        if (baseRecovered > 0 && !IERC20Orchestrator(baseToken).transfer(p.proposer, baseRecovered)) revert TransferFailed();
+        if (quoteRecovered > 0 && !IERC20Orchestrator(wmon).transfer(p.proposer, quoteRecovered)) revert TransferFailed();
 
         emit LiquidityReclaimed(proposalId, baseRecovered, quoteRecovered);
     }

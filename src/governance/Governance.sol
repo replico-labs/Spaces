@@ -109,6 +109,7 @@ contract Governance is Initializable, GovernanceStorage {
         proposal.snapshotBlock = block.number - 1;
         proposal.startBlock = block.number + _config.votingDelay;
         proposal.endBlock = proposal.startBlock + _config.votingPeriod;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; ++i) {
             proposal.actions.push(actions[i]);
@@ -158,7 +159,7 @@ contract Governance is Initializable, GovernanceStorage {
         receipt.hasVoted = true;
         receipt.support = support;
 
-        weight = IGovernanceToken(governanceToken).getPastVotes(
+        weight = IGovernanceToken(proposalToken[proposalId]).getPastVotes(
             voter,
             proposal.snapshotBlock
         );
@@ -219,7 +220,7 @@ contract Governance is Initializable, GovernanceStorage {
             revert VotingNotStarted();
         }
 
-        uint256 totalSupply = IGovernanceToken(governanceToken)
+        uint256 totalSupply = IGovernanceToken(proposalToken[proposalId])
             .getPastTotalSupply(proposal.snapshotBlock);
 
         uint256 totalParticipation = GovernanceMath.participation(proposal);
@@ -323,7 +324,9 @@ contract Governance is Initializable, GovernanceStorage {
                         GOVERNANCE TOKEN UPDATES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Points governance at a new voting token.
+    /// @notice Points governance at a new voting token (the staking
+    ///         contract for the DAO's new token). New proposals use it;
+    ///         open ones keep the token they were created with.
     /// @dev Only callable through an executed governance proposal.
     function setGovernanceToken(address newToken) external onlyGovernance {
         if (newToken == address(0)) revert ZeroAddress();
@@ -362,7 +365,7 @@ contract Governance is Initializable, GovernanceStorage {
     ) public view proposalExists(proposalId) returns (ProposalState) {
         Proposal storage proposal = _proposals[proposalId];
 
-        uint256 totalSupply = IGovernanceToken(governanceToken)
+        uint256 totalSupply = IGovernanceToken(proposalToken[proposalId])
             .getPastTotalSupply(proposal.snapshotBlock);
 
         return GovernanceState.proposalState(proposal, _config, totalSupply);
@@ -380,7 +383,7 @@ contract Governance is Initializable, GovernanceStorage {
     ) external view proposalExists(proposalId) returns (uint256) {
         Proposal storage proposal = _proposals[proposalId];
 
-        uint256 totalSupply = IGovernanceToken(governanceToken)
+        uint256 totalSupply = IGovernanceToken(proposalToken[proposalId])
             .getPastTotalSupply(proposal.snapshotBlock);
 
         return GovernanceMath.quorumVotes(totalSupply, _config.quorumBps);

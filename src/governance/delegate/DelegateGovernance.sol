@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { IRandomnessSource } from "../../randomness/IRandomnessSource.sol";
 
 /// @dev Minimal interface into a DAO's StakedGovernanceToken - only what's
 ///      needed here, so this contract has zero external dependencies (no
@@ -29,8 +30,12 @@ interface IVotesToken {
 ///      Design choices locked in for this build:
 ///      - Council votes are equal-weight (one seat = one vote), not scaled
 ///        by election margin.
-///      - Elections are plurality-at-large: top `councilSize` vote-getters
-///        win, one round, no ranked choice.
+///      - The council is `councilSize` numbered seats (optionally labelled,
+///        e.g. "Treasurer"). Candidates run for one seat; voters pick at most
+///        one candidate per seat; each seat goes to its most-voted candidate.
+///        A tie is settled by a random draw (the randomness source, Pyth
+///        Entropy, as Sortition uses), or by who declared first when there
+///        is no source. A seat nobody runs for keeps its holder.
 ///      - Recall is supported. A removed delegate's seat sits vacant until
 ///        the next scheduled election - no special election is triggered.
 ///      - No term limits. A delegate may run again indefinitely.
@@ -163,6 +168,10 @@ contract DelegateGovernance is Initializable {
     error RecallVotingNotEnded();
     error RecallAlreadyFinalized();
     error NotCurrentlyOnCouncil();
+    error InvalidSeat();
+    error TwoCandidatesForOneSeat();
+    error DrawPending();
+    error NoDrawPending();
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -181,6 +190,9 @@ contract DelegateGovernance is Initializable {
     event RecallVoteCast(uint256 indexed recallId, address indexed voter, VoteType support, uint256 weight);
     event RecallFinalized(uint256 indexed recallId, address indexed delegate, bool removed);
     event ConfigUpdated();
+    event SeatCandidacyDeclared(uint256 indexed electionId, uint16 indexed seat, address indexed candidate);
+    event TieDrawRequested(uint256 indexed electionId, bytes32 requestId);
+    event SeatLabelSet(uint16 indexed seat, string label);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event GovernanceTokenUpdated(address indexed previousToken, address indexed newToken);
 
@@ -191,6 +203,10 @@ contract DelegateGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken; // the DAO's StakedGovernanceToken
+    /// @notice The voting token each election and recall started with, so a
+    ///         token change (setGovernanceToken) leaves open ones alone.
+    mapping(uint256 => address) public electionToken;
+    mapping(uint256 => address) public recallToken;
     address public treasury;
     DelegateGovernanceConfig internal _config;
 
@@ -212,6 +228,16 @@ contract DelegateGovernance is Initializable {
     uint256 public recallCount;
     mapping(uint256 => RecallVote) internal _recalls;
     mapping(uint256 => mapping(address => bool)) internal _hasVotedInRecall;
+
+    /// @notice Settles tied seats; zero means ties go to whoever declared first.
+    IRandomnessSource public randomnessSource;
+    /// @notice A seat's label, e.g. "Treasurer" (set by proposal).
+    mapping(uint16 => string) public seatLabel;
+    /// @dev Seat + 1 a candidate runs for, per election (0: not running).
+    mapping(uint256 => mapping(address => uint16)) internal _seatOf;
+    mapping(uint256 => mapping(uint16 => address[])) internal _seatCandidates;
+    /// @notice Elections waiting on a random draw to settle tied seats.
+    mapping(uint256 => bool) public awaitingDraw;
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
@@ -250,7 +276,8 @@ contract DelegateGovernance is Initializable {
         address governanceToken_,
         address treasury_,
         DelegateGovernanceConfig memory config_,
-        address[] memory initialCouncil_
+        address[] memory initialCouncil_,
+        address randomnessSource_
     ) external initializer {
         if (creator_ == address(0) || governanceToken_ == address(0) || treasury_ == address(0)) {
             revert ZeroAddress();
@@ -263,6 +290,7 @@ contract DelegateGovernance is Initializable {
         governanceToken = governanceToken_;
         treasury = treasury_;
         _config = config_;
+        randomnessSource = IRandomnessSource(randomnessSource_);
 
         for (uint256 i = 0; i < initialCouncil_.length; i++) {
             address member = initialCouncil_[i];
@@ -294,29 +322,35 @@ contract DelegateGovernance is Initializable {
         election.candidacyDeadline = block.number + _config.candidacyPeriod;
         election.votingEndBlock = election.candidacyDeadline + _config.electionVotingPeriod;
         election.snapshotBlock = block.number;
+        electionToken[electionId] = governanceToken;
 
         emit ElectionStarted(electionId, election.candidacyDeadline, election.votingEndBlock);
     }
 
-    /// @notice Declares candidacy in an open election's candidacy window.
-    function declareCandidacy(uint256 electionId) external {
+    /// @notice Declares candidacy for `seat` (0 to councilSize - 1) in an
+    ///         open election's candidacy window. One seat per election.
+    function declareCandidacy(uint256 electionId, uint16 seat) external {
         Election storage election = _elections[electionId];
         if (election.id == 0) revert NoActiveElection();
         if (block.number > election.candidacyDeadline) revert CandidacyWindowClosed();
         if (_isCandidate[electionId][msg.sender]) revert AlreadyCandidate();
+        if (seat >= _config.councilSize) revert InvalidSeat();
 
         uint256 power = IVotesToken(governanceToken).balanceOf(msg.sender);
         if (power < _config.candidacyThreshold) revert CandidacyThresholdNotMet();
 
         _isCandidate[electionId][msg.sender] = true;
+        _seatOf[electionId][msg.sender] = seat + 1;
+        _seatCandidates[electionId][seat].push(msg.sender);
         election.candidates.push(msg.sender);
 
         emit CandidacyDeclared(electionId, msg.sender);
+        emit SeatCandidacyDeclared(electionId, seat, msg.sender);
     }
 
-    /// @notice Votes for up to `councilSize` distinct candidates in an
-    ///         election, using voting power snapshotted when the election
-    ///         started.
+    /// @notice Votes for at most one candidate per seat, using voting power
+    ///         snapshotted when the election started; each choice gets the
+    ///         voter's whole weight.
     function voteInElection(uint256 electionId, address[] calldata candidates) external {
         Election storage election = _elections[electionId];
         if (election.id == 0) revert NoActiveElection();
@@ -331,11 +365,12 @@ contract DelegateGovernance is Initializable {
             if (!_isCandidate[electionId][candidates[i]]) revert NotACandidate();
             for (uint256 j = i + 1; j < candidates.length; j++) {
                 if (candidates[i] == candidates[j]) revert DuplicateCandidate();
+                if (_seatOf[electionId][candidates[i]] == _seatOf[electionId][candidates[j]]) revert TwoCandidatesForOneSeat();
             }
         }
 
         _hasVotedInElection[electionId][msg.sender] = true;
-        uint256 weight = IVotesToken(governanceToken).getPastVotes(msg.sender, election.snapshotBlock);
+        uint256 weight = IVotesToken(electionToken[electionId]).getPastVotes(msg.sender, election.snapshotBlock);
 
         for (uint256 i = 0; i < candidates.length; i++) {
             _electionVotes[electionId][candidates[i]] += weight;
@@ -344,59 +379,115 @@ contract DelegateGovernance is Initializable {
         emit ElectionVoteCast(electionId, msg.sender, weight);
     }
 
-    /// @notice Finalizes an election once voting has closed: top
-    ///         `councilSize` vote-getters become the new council (plurality
-    ///         at-large). A seat is left vacant if there were fewer
-    ///         candidates than seats.
-    function finalizeElection(uint256 electionId) external {
+    /// @notice Finalizes an election once voting has closed: each seat goes
+    ///         to its most-voted candidate. If a seat is tied and there is a
+    ///         randomness source, this requests a draw (send its fee as
+    ///         value) and resolveTies seats the council once it's in.
+    function finalizeElection(uint256 electionId) external payable {
         Election storage election = _elections[electionId];
         if (election.id == 0) revert NoActiveElection();
         if (block.number <= election.votingEndBlock) revert ElectionVotingNotEnded();
         if (election.finalized) revert ElectionAlreadyFinalized();
+        if (awaitingDraw[electionId]) revert DrawPending();
 
-        election.finalized = true;
+        if (address(randomnessSource) != address(0) && _hasTie(electionId)) {
+            awaitingDraw[electionId] = true;
+            bytes32 requestId = tieRequestId(electionId);
+            randomnessSource.requestRandomness{value: msg.value}(requestId);
+            emit TieDrawRequested(electionId, requestId);
+            return;
+        }
+        _seatCouncil(electionId, 0, false);
+    }
 
-        uint256 n = election.candidates.length;
-        uint256 seats = _config.councilSize;
-        uint256 winnerCount = seats < n ? seats : n;
+    /// @notice Seats the council once the draw for tied seats is in.
+    function resolveTies(uint256 electionId) external {
+        if (!awaitingDraw[electionId]) revert NoDrawPending();
+        bytes32 requestId = tieRequestId(electionId);
+        if (!randomnessSource.isFulfilled(requestId)) revert DrawPending();
+        awaitingDraw[electionId] = false;
+        _seatCouncil(electionId, randomnessSource.getRandomness(requestId), true);
+    }
 
-        address[] memory winners = new address[](winnerCount);
-        uint256[] memory winnerVotes = new uint256[](winnerCount);
-        uint256 filled = 0;
+    function tieRequestId(uint256 electionId) public view returns (bytes32) {
+        return keccak256(abi.encode("delegate-tie", address(this), electionId));
+    }
 
-        for (uint256 i = 0; i < n; i++) {
-            address candidate = election.candidates[i];
-            uint256 votes = _electionVotes[electionId][candidate];
-
-            if (filled < winnerCount) {
-                winners[filled] = candidate;
-                winnerVotes[filled] = votes;
-                filled++;
-                continue;
-            }
-
-            uint256 minIdx = 0;
-            uint256 minVal = winnerVotes[0];
-            for (uint256 j = 1; j < winnerCount; j++) {
-                if (winnerVotes[j] < minVal) {
-                    minVal = winnerVotes[j];
-                    minIdx = j;
+    function _hasTie(uint256 electionId) internal view returns (bool) {
+        for (uint16 s = 0; s < _config.councilSize; s++) {
+            address[] storage cands = _seatCandidates[electionId][s];
+            uint256 best;
+            uint256 count;
+            for (uint256 i = 0; i < cands.length; i++) {
+                uint256 v = _electionVotes[electionId][cands[i]];
+                if (i == 0 || v > best) {
+                    best = v;
+                    count = 1;
+                } else if (v == best) {
+                    count++;
                 }
             }
-            if (votes > minVal) {
-                winners[minIdx] = candidate;
-                winnerVotes[minIdx] = votes;
+            if (count > 1) return true;
+        }
+        return false;
+    }
+
+    /// @dev Each seat: its most-voted candidate (a tie: drawn with `rand`, or
+    ///      the first to declare); no candidates: the holder stays, unless
+    ///      they won another seat, which leaves this one vacant.
+    function _seatCouncil(uint256 electionId, uint256 rand, bool useRand) internal {
+        Election storage election = _elections[electionId];
+        election.finalized = true;
+        uint16 seats = _config.councilSize;
+        address[] memory next = new address[](seats);
+        bool[] memory kept = new bool[](seats);
+
+        for (uint16 s = 0; s < seats; s++) {
+            address[] storage cands = _seatCandidates[electionId][s];
+            if (cands.length == 0) {
+                next[s] = s < council.length ? council[s] : address(0);
+                kept[s] = true;
+                continue;
+            }
+            uint256 best;
+            uint256 count;
+            for (uint256 i = 0; i < cands.length; i++) {
+                uint256 v = _electionVotes[electionId][cands[i]];
+                if (i == 0 || v > best) {
+                    best = v;
+                    count = 1;
+                } else if (v == best) {
+                    count++;
+                }
+            }
+            uint256 pick = useRand && count > 1 ? uint256(keccak256(abi.encode(rand, s))) % count : 0;
+            for (uint256 i = 0; i < cands.length; i++) {
+                if (_electionVotes[electionId][cands[i]] != best) continue;
+                if (pick == 0) {
+                    next[s] = cands[i];
+                    break;
+                }
+                pick--;
+            }
+        }
+        // A holder kept on an uncontested seat who also won another seat gives the kept one up.
+        for (uint16 s = 0; s < seats; s++) {
+            if (!kept[s] || next[s] == address(0)) continue;
+            for (uint16 t = 0; t < seats; t++) {
+                if (t != s && !kept[t] && next[t] == next[s]) {
+                    next[s] = address(0);
+                    break;
+                }
             }
         }
 
         for (uint256 i = 0; i < council.length; i++) {
-            isCouncilMember[council[i]] = false;
+            if (council[i] != address(0)) isCouncilMember[council[i]] = false;
         }
         delete council;
-
-        for (uint256 i = 0; i < winners.length; i++) {
-            council.push(winners[i]);
-            isCouncilMember[winners[i]] = true;
+        for (uint16 s = 0; s < seats; s++) {
+            council.push(next[s]);
+            if (next[s] != address(0)) isCouncilMember[next[s]] = true;
         }
 
         currentTermEnd = block.timestamp + _config.termLength;
@@ -530,6 +621,7 @@ contract DelegateGovernance is Initializable {
         r.delegate = delegate;
         r.endBlock = block.number + _config.recallVotingPeriod;
         r.snapshotBlock = block.number;
+        recallToken[recallId] = governanceToken;
 
         emit RecallInitiated(recallId, delegate, msg.sender);
     }
@@ -541,7 +633,7 @@ contract DelegateGovernance is Initializable {
         if (r.finalized) revert RecallAlreadyFinalized();
         if (_hasVotedInRecall[recallId][msg.sender]) revert AlreadyVoted();
 
-        uint256 weight = IVotesToken(governanceToken).getPastVotes(msg.sender, r.snapshotBlock);
+        uint256 weight = IVotesToken(recallToken[recallId]).getPastVotes(msg.sender, r.snapshotBlock);
         _hasVotedInRecall[recallId][msg.sender] = true;
 
         if (support == VoteType.For) r.forVotes += weight;
@@ -561,7 +653,7 @@ contract DelegateGovernance is Initializable {
         if (r.finalized) revert RecallAlreadyFinalized();
         r.finalized = true;
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(r.snapshotBlock);
+        uint256 totalSupply = IVotesToken(recallToken[recallId]).getPastTotalSupply(r.snapshotBlock);
         uint256 participation = r.forVotes + r.againstVotes + r.abstainVotes;
         bool quorumMet = totalSupply != 0 && (participation * 10_000) / totalSupply >= _config.recallQuorumBps;
 
@@ -570,11 +662,9 @@ contract DelegateGovernance is Initializable {
 
         if (quorumMet && approvalMet && isCouncilMember[r.delegate]) {
             isCouncilMember[r.delegate] = false;
-            uint256 len = council.length;
-            for (uint256 i = 0; i < len; i++) {
+            for (uint256 i = 0; i < council.length; i++) {
                 if (council[i] == r.delegate) {
-                    council[i] = council[len - 1];
-                    council.pop();
+                    council[i] = address(0); // the seat sits vacant
                     break;
                 }
             }
@@ -600,6 +690,16 @@ contract DelegateGovernance is Initializable {
         governanceToken = newToken;
     }
 
+    function setSeatLabel(uint16 seat, string calldata label) external onlyGovernance {
+        if (seat >= _config.councilSize) revert InvalidSeat();
+        seatLabel[seat] = label;
+        emit SeatLabelSet(seat, label);
+    }
+
+    function setRandomnessSource(address source) external onlyGovernance {
+        randomnessSource = IRandomnessSource(source);
+    }
+
     function setTreasury(address newTreasury) external onlyGovernance {
         if (newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, newTreasury);
@@ -614,8 +714,24 @@ contract DelegateGovernance is Initializable {
         return _config;
     }
 
+    /// @notice The council by seat; address(0) is a vacant seat.
     function getCouncil() external view returns (address[] memory) {
         return council;
+    }
+
+    /// @notice The candidates for `seat` in an election.
+    function seatCandidates(uint256 electionId, uint16 seat) external view returns (address[] memory) {
+        return _seatCandidates[electionId][seat];
+    }
+
+    /// @notice The seat a candidate runs for in an election, and whether they run.
+    function seatOf(uint256 electionId, address candidate) external view returns (uint16 seat, bool running) {
+        uint16 v = _seatOf[electionId][candidate];
+        return (v == 0 ? 0 : v - 1, v != 0);
+    }
+
+    function electionVotes(uint256 electionId, address candidate) external view returns (uint256) {
+        return _electionVotes[electionId][candidate];
     }
 
     function getProposal(uint256 proposalId) external view proposalExists(proposalId) returns (CouncilProposal memory) {

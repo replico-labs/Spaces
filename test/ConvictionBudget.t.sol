@@ -39,6 +39,9 @@ contract BudgetStakedToken {
 
     function lock(address, uint256) external {}
     function unlock(address, uint256) external {}
+    function lockedBalance(address) external pure returns (uint256) {
+        return 0;
+    }
 }
 
 /// @dev Permit2's allowance/approve, enough to prove revocation.

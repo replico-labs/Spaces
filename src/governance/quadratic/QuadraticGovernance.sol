@@ -141,6 +141,10 @@ contract QuadraticGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken;
+    /// @notice The voting token each proposal was created with; votes,
+    ///         quorum and state for that proposal always use it, so a token
+    ///         change (setGovernanceToken) leaves open proposals alone.
+    mapping(uint256 => address) public proposalToken;
     address public treasury;
     QuadraticGovernanceConfig internal _config;
 
@@ -221,6 +225,7 @@ contract QuadraticGovernance is Initializable {
         p.snapshotBlock = block.number - 1;
         p.startBlock = block.number + _config.votingDelay;
         p.endBlock = p.startBlock + _config.votingPeriod;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
@@ -253,7 +258,7 @@ contract QuadraticGovernance is Initializable {
         receipt.hasVoted = true;
         receipt.support = support;
 
-        uint256 rawBalance = IVotesToken(governanceToken).getPastVotes(voter, p.snapshotBlock);
+        uint256 rawBalance = IVotesToken(proposalToken[proposalId]).getPastVotes(voter, p.snapshotBlock);
         weight = _sqrt(rawBalance);
         receipt.weight = weight;
 
@@ -290,7 +295,7 @@ contract QuadraticGovernance is Initializable {
         if (p.queuedAt != 0) revert ProposalAlreadyQueued();
         if (block.number <= p.endBlock) revert VotingNotStarted();
 
-        uint256 sqrtTotalSupply = _sqrt(IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock));
+        uint256 sqrtTotalSupply = _sqrt(IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock));
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
 
         if (sqrtTotalSupply == 0 || (participation * 10_000) / sqrtTotalSupply < _config.quorumBps) {
@@ -396,7 +401,7 @@ contract QuadraticGovernance is Initializable {
             return ProposalState.Queued;
         }
 
-        uint256 sqrtTotalSupply = _sqrt(IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock));
+        uint256 sqrtTotalSupply = _sqrt(IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock));
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
         uint256 decisive = p.forVotes + p.againstVotes;
 

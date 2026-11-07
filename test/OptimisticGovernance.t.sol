@@ -227,6 +227,36 @@ contract OptimisticGovernanceTest is Test {
         assertEq(token.balanceOf(treasury), 0);
     }
 
+    function test_TokenChange_ChallengeVotesAndBondStayInTheOldToken() public {
+        vm.prank(alice);
+        uint256 id = gov.propose(_singleAction(), "ipfs://p1");
+        token.setBalance(challenger, CHALLENGE_BOND);
+        vm.prank(challenger);
+        gov.challenge(id);
+
+        // The DAO moves to a new token and raises the bond meanwhile.
+        MockVotesToken next = new MockVotesToken();
+        vm.startPrank(address(gov));
+        gov.setGovernanceToken(address(next));
+        OptimisticGovernance.OptimisticGovernanceConfig memory c = defaultConfig();
+        c.challengeBond = CHALLENGE_BOND * 3;
+        gov.updateGovernanceConfig(c);
+        vm.stopPrank();
+        assertEq(gov.proposalToken(id), address(token));
+
+        OptimisticGovernance.Proposal memory p = gov.getProposal(id);
+        token.setPastVotes(bob, p.snapshotBlock, 10_000 ether);
+        token.setPastTotalSupply(p.snapshotBlock, 100_000 ether);
+        next.setPastVotes(bob, p.snapshotBlock, 99_999 ether);
+        vm.prank(bob);
+        assertEq(gov.castVote(id, OptimisticGovernance.VoteType.Against), 10_000 ether, "the old token's votes");
+
+        vm.roll(p.votingEndBlock + 1);
+        gov.finalizeChallenge(id);
+        assertEq(token.balanceOf(challenger), CHALLENGE_BOND, "the bond as posted, in its token");
+        assertEq(next.balanceOf(challenger), 0);
+    }
+
     function test_FinalizeChallenge_RevertsOnDoubleResolve() public {
         vm.prank(alice);
         uint256 id = gov.propose(_singleAction(), "ipfs://p1");

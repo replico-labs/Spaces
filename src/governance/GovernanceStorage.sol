@@ -17,6 +17,12 @@ abstract contract GovernanceStorage {
     mapping(uint256 => Proposal) internal _proposals;
     mapping(uint256 => mapping(address => VoteReceipt)) internal _voteReceipts;
 
+    /// @notice The voting token each proposal was created with. Votes,
+    ///         quorum and state for a proposal always use it, so changing
+    ///         the DAO's token (setGovernanceToken) never touches open
+    ///         proposals.
+    mapping(uint256 => address) public proposalToken;
+
     modifier proposalExists(uint256 proposalId) {
         require(proposalId > 0 && proposalId <= _proposalCount, "Proposal does not exist");
         _;

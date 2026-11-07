@@ -220,4 +220,138 @@ contract TreasuryTest is Test {
         vm.expectRevert(ITreasury.Unauthorized.selector);
         treasury.transferETH(payable(recipient), 1 ether);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                            ALLOWANCES
+    //////////////////////////////////////////////////////////////*/
+
+    function _allow(address token, uint256 amount, uint256 months) internal returns (uint256 id) {
+        vm.prank(governance);
+        id = treasury.createAllowance(recipient, token, amount, uint64(block.timestamp + months * 30 days));
+    }
+
+    function test_Allowance_PaysOncePerPeriodInTokens() public {
+        uint256 id = _allow(address(mockToken), 100 ether, 3);
+        assertEq(id, 1);
+        assertEq(treasury.allowanceCount(), 1);
+
+        vm.prank(recipient);
+        assertEq(treasury.claimAllowance(id), 100 ether);
+        assertEq(mockToken.balanceOf(recipient), 100 ether);
+
+        // Same period again: refused, naming when the next one opens.
+        uint256 start = block.timestamp;
+        vm.prank(recipient);
+        vm.expectRevert(abi.encodeWithSelector(ITreasury.AllowanceAlreadyClaimed.selector, start + 30 days));
+        treasury.claimAllowance(id);
+
+        vm.warp(start + 30 days);
+        vm.prank(recipient);
+        treasury.claimAllowance(id);
+        assertEq(mockToken.balanceOf(recipient), 200 ether);
+    }
+
+    function test_Allowance_MissedPeriodsLapse() public {
+        uint256 id = _allow(address(mockToken), 100 ether, 6);
+        vm.warp(block.timestamp + 95 days); // periods 1-3 never claimed; now in period 4
+        (uint256 due,) = treasury.claimableAllowance(id);
+        assertEq(due, 100 ether, "only the current period");
+        vm.prank(recipient);
+        treasury.claimAllowance(id);
+        assertEq(mockToken.balanceOf(recipient), 100 ether);
+        (due,) = treasury.claimableAllowance(id);
+        assertEq(due, 0);
+    }
+
+    function test_Allowance_NativeCoin() public {
+        uint256 id = _allow(address(0), 1 ether, 1);
+        uint256 before = recipient.balance;
+        vm.prank(recipient);
+        treasury.claimAllowance(id);
+        assertEq(recipient.balance - before, 1 ether);
+    }
+
+    function test_Allowance_OnlyRecipientClaims() public {
+        uint256 id = _allow(address(mockToken), 1 ether, 1);
+        vm.prank(outsider);
+        vm.expectRevert(ITreasury.Unauthorized.selector);
+        treasury.claimAllowance(id);
+    }
+
+    function test_Allowance_OnlyGovernanceGrantsChangesAndRevokes() public {
+        vm.prank(outsider);
+        vm.expectRevert(ITreasury.Unauthorized.selector);
+        treasury.createAllowance(recipient, address(mockToken), 1 ether, uint64(block.timestamp + 30 days));
+
+        uint256 id = _allow(address(mockToken), 1 ether, 2);
+        vm.startPrank(outsider);
+        vm.expectRevert(ITreasury.Unauthorized.selector);
+        treasury.updateAllowance(id, 2 ether, uint64(block.timestamp + 30 days));
+        vm.expectRevert(ITreasury.Unauthorized.selector);
+        treasury.revokeAllowance(id);
+        vm.stopPrank();
+    }
+
+    function test_Allowance_EndsAndRevokes() public {
+        uint256 id = _allow(address(mockToken), 1 ether, 1);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(recipient);
+        vm.expectRevert(ITreasury.AllowanceEnded.selector);
+        treasury.claimAllowance(id);
+
+        uint256 id2 = _allow(address(mockToken), 1 ether, 2);
+        vm.prank(governance);
+        treasury.revokeAllowance(id2);
+        vm.prank(recipient);
+        vm.expectRevert(ITreasury.AllowanceEnded.selector);
+        treasury.claimAllowance(id2);
+    }
+
+    function test_Allowance_UpdateKeepsPaidPeriods() public {
+        uint256 id = _allow(address(mockToken), 1 ether, 3);
+        vm.prank(recipient);
+        treasury.claimAllowance(id);
+        vm.prank(governance);
+        treasury.updateAllowance(id, 5 ether, uint64(block.timestamp + 60 days));
+        vm.prank(recipient);
+        vm.expectRevert(); // period 1 already paid
+        treasury.claimAllowance(id);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(recipient);
+        assertEq(treasury.claimAllowance(id), 5 ether);
+    }
+
+    function test_Allowance_TermsChecked() public {
+        vm.startPrank(governance);
+        vm.expectRevert(ITreasury.InvalidAllowance.selector);
+        treasury.createAllowance(recipient, address(mockToken), 0, uint64(block.timestamp + 30 days));
+        vm.expectRevert(ITreasury.InvalidAllowance.selector);
+        treasury.createAllowance(recipient, address(mockToken), 1, uint64(block.timestamp + 366 days));
+        vm.expectRevert(ITreasury.InvalidAllowance.selector);
+        treasury.createAllowance(recipient, address(mockToken), 1, uint64(block.timestamp));
+        vm.expectRevert(ITreasury.ZeroAddress.selector);
+        treasury.createAllowance(address(0), address(mockToken), 1, uint64(block.timestamp + 30 days));
+        vm.stopPrank();
+        vm.prank(recipient);
+        vm.expectRevert(ITreasury.AllowanceNotFound.selector);
+        treasury.claimAllowance(7);
+    }
+
+    function test_Allowance_ManyRecipientsAtOnce() public {
+        address other = makeAddr("contractor2");
+        vm.startPrank(governance);
+        uint256 a = treasury.createAllowance(recipient, address(mockToken), 1 ether, uint64(block.timestamp + 30 days));
+        uint256 b = treasury.createAllowance(other, address(mockToken), 2 ether, uint64(block.timestamp + 30 days));
+        uint256 c = treasury.createAllowance(recipient, address(0), 0.1 ether, uint64(block.timestamp + 30 days));
+        vm.stopPrank();
+        vm.prank(recipient);
+        treasury.claimAllowance(a);
+        vm.prank(other);
+        treasury.claimAllowance(b);
+        vm.prank(recipient);
+        treasury.claimAllowance(c);
+        assertEq(mockToken.balanceOf(recipient), 1 ether);
+        assertEq(mockToken.balanceOf(other), 2 ether);
+    }
 }
+

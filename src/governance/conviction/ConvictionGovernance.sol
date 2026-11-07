@@ -16,6 +16,7 @@ interface IBalanceToken {
 interface ILockableToken {
     function lock(address account, uint256 amount) external;
     function unlock(address account, uint256 amount) external;
+    function lockedBalance(address account) external view returns (uint256);
 }
 
 /// @dev The pieces of the Treasury, ERC20s and Permit2 the spending
@@ -270,6 +271,11 @@ contract ConvictionGovernance is Initializable {
     /// @notice Whether a proposal weakens the budget rules (see design note 5).
     mapping(uint256 => bool) public weakensRules;
 
+    /// @notice The staking token each proposal was created with: support
+    ///         for it is measured and locked in that token, so a token
+    ///         change never strands a lock on the wrong contract.
+    mapping(uint256 => address) public proposalToken;
+
     bool internal _executing;
 
     /*//////////////////////////////////////////////////////////////
@@ -370,6 +376,7 @@ contract ConvictionGovernance is Initializable {
         p.createdBlock = block.number;
         p.requestedAmount = requestedAmount;
         p.lastConvictionUpdateBlock = block.number;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
@@ -427,16 +434,17 @@ contract ConvictionGovernance is Initializable {
 
         _settleConviction(proposalId);
 
-        uint256 weight = IBalanceToken(governanceToken).balanceOf(msg.sender);
+        address token = proposalToken[proposalId];
+        if (hadPrevious) {
+            // Unlock first: when both proposals use the same token, the
+            // freed weight counts again here.
+            ILockableToken(proposalToken[previous]).unlock(msg.sender, oldWeight);
+        }
+        uint256 weight = IBalanceToken(token).balanceOf(msg.sender) - ILockableToken(token).lockedBalance(msg.sender);
         supporterWeight[proposalId][msg.sender] = weight;
         totalSupport[proposalId] += weight;
         currentSupportProposal[msg.sender] = proposalId;
-
-        // External calls after all local state effects above.
-        if (hadPrevious) {
-            ILockableToken(governanceToken).unlock(msg.sender, oldWeight);
-        }
-        ILockableToken(governanceToken).lock(msg.sender, weight);
+        ILockableToken(token).lock(msg.sender, weight);
 
         emit Supported(proposalId, msg.sender, weight);
     }
@@ -453,7 +461,7 @@ contract ConvictionGovernance is Initializable {
         supporterWeight[current][msg.sender] = 0;
         currentSupportProposal[msg.sender] = 0;
 
-        ILockableToken(governanceToken).unlock(msg.sender, weight);
+        ILockableToken(proposalToken[current]).unlock(msg.sender, weight);
 
         emit SupportWithdrawn(current, msg.sender, weight);
     }

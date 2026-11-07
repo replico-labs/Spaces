@@ -73,8 +73,9 @@ contract BoardDAOFactory {
     ///         hand the Treasury, token and staking contract to the new
     ///         governance, all in the same execution.
     ///         `token` and `stakedToken` are the DAO's existing token and
-    ///         staking contract, if it has them; Board doesn't use them but
-    ///         records them so a later switch back can find them.
+    ///         staking contract, if it has them; Board doesn't vote with
+    ///         them but keeps them (governanceToken, underlyingToken) so a
+    ///         later switch to a token model carries them over.
     function createForSwitch(
         string calldata name,
         address treasury,
@@ -86,7 +87,7 @@ contract BoardDAOFactory {
     ) external returns (address governance) {
         DAOFactoryLib.checkSwitch(treasury, token, stakedToken);
         governance = DAOFactoryLib.cloneForSwitch(boardGovernanceImplementation, switchNonce[msg.sender]++, expectedGovernance);
-        BoardGovernance(governance).initialize(name, msg.sender, treasury, config, initialSigners);
+        BoardGovernance(governance).initialize(name, msg.sender, treasury, config, initialSigners, token, stakedToken);
 
         _recordDAO(name, stakedToken, token, governance, treasury);
         predecessorOf[governance] = msg.sender;

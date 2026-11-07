@@ -25,6 +25,12 @@ interface ITreasury {
         uint256 amount
     );
 
+    event SetupAuthoritySet(address indexed authority);
+    event AllowanceCreated(uint256 indexed id, address indexed recipient, address token, uint256 amount, uint64 endsAt);
+    event AllowanceUpdated(uint256 indexed id, uint256 amount, uint64 endsAt);
+    event AllowanceRevoked(uint256 indexed id);
+    event AllowanceClaimed(uint256 indexed id, address indexed recipient, uint64 period, uint256 amount);
+
     event OwnershipTransferred(
         address indexed previousOwner,
         address indexed newOwner
@@ -38,6 +44,11 @@ interface ITreasury {
     error ZeroAddress();
     error TransferFailed();
     error InsufficientBalance();
+    error InvalidAllowance();
+    error AllowanceNotFound();
+    error AllowanceEnded();
+    /// @param nextAt when the next period opens
+    error AllowanceAlreadyClaimed(uint256 nextAt);
 
     /*//////////////////////////////////////////////////////////////
                                 VIEWS
@@ -100,4 +111,24 @@ interface ITreasury {
         address newGovernance
     )
         external;
+
+    /*//////////////////////////////////////////////////////////////
+                            ALLOWANCES
+    //////////////////////////////////////////////////////////////*/
+
+    function setSetupAuthority(address authority) external;
+
+    function endSetup() external;
+
+    function createAllowance(address recipient, address token, uint256 amount, uint64 endsAt) external returns (uint256 id);
+
+    function updateAllowance(uint256 id, uint256 amount, uint64 endsAt) external;
+
+    function revokeAllowance(uint256 id) external;
+
+    function claimAllowance(uint256 id) external returns (uint256 amount);
+
+    function allowanceCount() external view returns (uint256);
+
+    function claimableAllowance(uint256 id) external view returns (uint256 amount, uint256 nextAt);
 }

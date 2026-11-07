@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
@@ -36,7 +37,10 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 ///      gets passed to `approveOrderHash`. This keeps this contract
 ///      simple and marketplace-agnostic: it never needs to know any
 ///      specific marketplace's order struct layout.
-contract NFTMarketplaceWrapper {
+///
+///      Clone-ready: one implementation per network, a tiny EIP-1167 clone
+///      per DAO made by WrapperFactory, set up once with initialize().
+contract NFTMarketplaceWrapper is Initializable {
     address public governance;
     address public treasury;
 
@@ -52,6 +56,7 @@ contract NFTMarketplaceWrapper {
     event NativeSwept(uint256 amount, address indexed to);
     event ERC20Swept(address indexed token, uint256 amount, address indexed to);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event GovernanceUpdated(address indexed previousGovernance, address indexed newGovernance);
 
     error ZeroAddress();
     error Unauthorized();
@@ -63,7 +68,12 @@ contract NFTMarketplaceWrapper {
         _;
     }
 
-    constructor(address governance_, address treasury_) {
+    /// @dev The implementation itself can never be initialized; only clones.
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address governance_, address treasury_) external initializer {
         if (governance_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
         governance = governance_;
         treasury = treasury_;
@@ -118,6 +128,14 @@ contract NFTMarketplaceWrapper {
         if (newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, newTreasury);
         treasury = newTreasury;
+    }
+
+    /// @notice Hands the wrapper to a new governance: a model switch
+    ///         includes this call so the NFTs follow the DAO.
+    function setGovernance(address newGovernance) external onlyGovernance {
+        if (newGovernance == address(0)) revert ZeroAddress();
+        emit GovernanceUpdated(governance, newGovernance);
+        governance = newGovernance;
     }
 
     /// @notice Sends an ERC721 this wrapper holds to `to` - e.g. a

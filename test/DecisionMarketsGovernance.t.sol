@@ -348,6 +348,53 @@ contract DecisionMarketsGovernanceTest is Test {
         assertTrue(wmon.balanceOf(proposer) > proposerQuoteBefore + 9 ether);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                A TOKEN CHANGE LEAVES OPEN PROPOSALS ALONE
+    //////////////////////////////////////////////////////////////*/
+
+    function _changeToken() internal returns (MockGovernanceToken next) {
+        next = new MockGovernanceToken();
+        vm.prank(address(gov));
+        gov.setGovernanceToken(address(next));
+        next.mint(proposer, 10_000 ether);
+    }
+
+    function test_TokenChange_CancelRefundsTheSeedInItsOwnToken() public {
+        uint256 id = _seedOnly(1_000 ether, 10 ether);
+        assertEq(gov.proposalBaseToken(id), address(govToken));
+        MockGovernanceToken next = _changeToken();
+
+        vm.prank(proposer);
+        gov.cancelProposal(id);
+        assertEq(govToken.balanceOf(proposer), 10_000 ether, "refunded in the old token");
+        assertEq(next.balanceOf(proposer), 10_000 ether);
+    }
+
+    function test_TokenChange_ReclaimPaysTheOldTokenAndOnlyThisProposals() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+        MockGovernanceToken next = _changeToken();
+
+        // A new proposal is seeded in the new token.
+        vm.startPrank(proposer);
+        next.approve(address(gov), 500 ether);
+        uint256 later = gov.propose{value: 5 ether}(_singleAction(), "ipfs://p2", 500 ether);
+        vm.stopPrank();
+        assertEq(gov.proposalBaseToken(later), address(next));
+
+        // Tokens sent to the governance by mistake aren't anyone's payout.
+        govToken.mint(address(gov), 77 ether);
+
+        vm.warp(vm.getBlockTimestamp() + defaultConfig().tradingPeriod + 1);
+        gov.finalizeProposal(id);
+        uint256 before = govToken.balanceOf(proposer);
+        uint256 nextBefore = next.balanceOf(proposer);
+        gov.reclaimLiquidity(id);
+        uint256 got = govToken.balanceOf(proposer) - before;
+        assertTrue(got > 900 ether && got < 1_000 ether, "about the seed, in the old token");
+        assertEq(govToken.balanceOf(address(gov)), 77 ether, "the stray tokens stay");
+        assertEq(next.balanceOf(proposer), nextBefore, "nothing in the new token");
+    }
+
     function test_ReclaimLiquidity_WorksRegardlessOfPassOrFail() public {
         // Pass-outcome scenario (mirrors test_FullLifecycle_PassWinsWhenTradedHigher).
         uint256 id = _propose(1_000 ether, 10 ether);

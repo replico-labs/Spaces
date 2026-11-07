@@ -18,6 +18,10 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 ///      capital-based. A DAO can start with this model (a small trusted
 ///      founding team) and later switch to a token-weighted or delegate
 ///      model without its Treasury ever moving.
+interface IStakingUnderlying {
+    function underlying() external view returns (address);
+}
+
 contract BoardGovernance is Initializable {
     /*//////////////////////////////////////////////////////////////
                                 TYPES
@@ -95,6 +99,7 @@ contract BoardGovernance is Initializable {
     event SignerRemoved(address indexed signer);
     event RequiredApprovalsUpdated(uint16 previousValue, uint16 newValue);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event GovernanceTokenUpdated(address indexed previousToken, address indexed newToken);
 
     /*//////////////////////////////////////////////////////////////
                                 STATE
@@ -111,6 +116,14 @@ contract BoardGovernance is Initializable {
     uint256 public proposalCount;
     mapping(uint256 => Proposal) internal _proposals;
     mapping(uint256 => mapping(address => bool)) public hasConfirmed;
+
+    /// @notice The DAO's staking contract and the token it wraps, if it
+    ///         has them. Board never votes with them; it keeps them so a
+    ///         token change can happen while on Board and the next switch
+    ///         to a token model carries them over. Zero for a DAO that
+    ///         never had a token.
+    address public governanceToken;
+    address public underlyingToken;
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
@@ -150,6 +163,32 @@ contract BoardGovernance is Initializable {
         BoardGovernanceConfig memory config_,
         address[] memory initialSigners_
     ) external initializer {
+        _initialize(daoName_, creator_, treasury_, config_, initialSigners_);
+    }
+
+    /// @notice As above, for a DAO that already has a token and staking
+    ///         contract (a switch to Board from a token model).
+    function initialize(
+        string memory daoName_,
+        address creator_,
+        address treasury_,
+        BoardGovernanceConfig memory config_,
+        address[] memory initialSigners_,
+        address underlyingToken_,
+        address governanceToken_
+    ) external initializer {
+        _initialize(daoName_, creator_, treasury_, config_, initialSigners_);
+        underlyingToken = underlyingToken_;
+        governanceToken = governanceToken_;
+    }
+
+    function _initialize(
+        string memory daoName_,
+        address creator_,
+        address treasury_,
+        BoardGovernanceConfig memory config_,
+        address[] memory initialSigners_
+    ) internal {
         if (creator_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
         if (initialSigners_.length == 0) revert InvalidConfiguration();
         _validateConfig(config_, initialSigners_.length);
@@ -331,6 +370,16 @@ contract BoardGovernance is Initializable {
         if (newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, newTreasury);
         treasury = newTreasury;
+    }
+
+    /// @notice Records the DAO's new staking contract (and the token it
+    ///         wraps), e.g. after creating one for a new token. The next
+    ///         switch to a token model uses it.
+    function setGovernanceToken(address newToken) external onlyGovernance {
+        if (newToken == address(0)) revert ZeroAddress();
+        emit GovernanceTokenUpdated(governanceToken, newToken);
+        governanceToken = newToken;
+        underlyingToken = IStakingUnderlying(newToken).underlying();
     }
 
     /*//////////////////////////////////////////////////////////////

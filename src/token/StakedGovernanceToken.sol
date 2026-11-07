@@ -88,6 +88,13 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
     ///         it locked, so members can still withdraw old support.
     mapping(address => mapping(address => uint256)) public lockedBy;
 
+    /// @notice Whether `account` lets `locker` lock its balance. A lock
+    ///         needs both: the locker is the authorized one, and the
+    ///         member approved it (approveLocker). So no governance, not
+    ///         even one the DAO installed, can freeze a member's stake
+    ///         without their consent.
+    mapping(address => mapping(address => bool)) public lockerApproved;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -98,6 +105,8 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
     event AuthorizedLockerUpdated(address indexed previousLocker, address indexed newLocker);
     event Locked(address indexed account, uint256 amount);
     event Unlocked(address indexed account, uint256 amount);
+    event LockerApproval(address indexed account, address indexed locker, bool approved);
+    event StakedFor(address indexed payer, address indexed account, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -109,6 +118,7 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
     error Unauthorized();
     error InsufficientUnlockedBalance();
     error InsufficientLockedBalance();
+    error LockerNotApproved();
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
@@ -175,11 +185,19 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
                         LOCKING (AUTHORIZED LOCKER ONLY)
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Lets (or stops) `locker` lock the caller's balance. Only
+    ///         new locks need it: revoking never releases what's locked.
+    function approveLocker(address locker, bool approved) external {
+        lockerApproved[msg.sender][locker] = approved;
+        emit LockerApproval(msg.sender, locker, approved);
+    }
+
     /// @notice Locks `amount` of `account`'s balance - it becomes neither
     ///         transferable nor unstakable until unlocked. Reverts if this
     ///         would lock more than the account's current unlocked
-    ///         balance.
+    ///         balance, or if `account` hasn't approved the caller.
     function lock(address account, uint256 amount) external onlyAuthorizedLocker {
+        if (!lockerApproved[account][msg.sender]) revert LockerNotApproved();
         uint256 newLocked = lockedBalance[account] + amount;
         if (newLocked > balanceOf(account)) revert InsufficientUnlockedBalance();
         lockedBalance[account] = newLocked;
@@ -223,6 +241,27 @@ contract StakedGovernanceToken is Initializable, ERC20PermitUpgradeable, ERC20Vo
         _mint(msg.sender, amount);
 
         emit Staked(msg.sender, amount);
+    }
+
+    /// @notice Stakes `amount` of the caller's underlying tokens for
+    ///         `account`: the staked balance and voting power are
+    ///         `account`'s. Used by a converter moving a member's stake
+    ///         from an old token into this one.
+    /// @dev Delegates `account` to itself if it never delegated, as
+    ///      stake() does.
+    function stakeFor(address account, uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (account == address(0)) revert ZeroAddress();
+
+        if (delegates(account) == address(0)) {
+            _delegate(account, account);
+        }
+
+        underlying.safeTransferFrom(msg.sender, address(this), amount);
+        _mint(account, amount);
+
+        emit Staked(account, amount);
+        emit StakedFor(msg.sender, account, amount);
     }
 
     /// @notice Burns `amount` of staked voting power and returns the

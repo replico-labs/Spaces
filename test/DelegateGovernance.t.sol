@@ -34,6 +34,25 @@ contract MockVotesToken {
     }
 }
 
+contract MockTieDraw {
+    mapping(bytes32 => uint256) public randomness;
+    mapping(bytes32 => bool) public isFulfilled;
+    bytes32 public lastRequest;
+
+    function requestRandomness(bytes32 requestId) external payable {
+        lastRequest = requestId;
+    }
+
+    function fulfill(bytes32 requestId, uint256 value) external {
+        randomness[requestId] = value;
+        isFulfilled[requestId] = true;
+    }
+
+    function getRandomness(bytes32 requestId) external view returns (uint256) {
+        return randomness[requestId];
+    }
+}
+
 contract DelegateGovernanceTest is Test {
     DelegateGovernance internal gov;
     MockVotesToken internal token;
@@ -77,7 +96,7 @@ contract DelegateGovernanceTest is Test {
         token = new MockVotesToken();
         gov = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         gov.initialize(
-            "Test DAO", creator, address(token), treasury, defaultConfig(), initialCouncil()
+            "Test DAO", creator, address(token), treasury, defaultConfig(), initialCouncil(), address(0)
         );
     }
 
@@ -105,13 +124,13 @@ contract DelegateGovernanceTest is Test {
 
         DelegateGovernance freshGov1 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.InvalidConfiguration.selector);
-        freshGov1.initialize("Test DAO", creator, address(token), treasury, defaultConfig(), tooFew);
+        freshGov1.initialize("Test DAO", creator, address(token), treasury, defaultConfig(), tooFew, address(0));
     }
 
     function test_Constructor_RevertsOnZeroTreasury() public {
         DelegateGovernance freshGov2 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.ZeroAddress.selector);
-        freshGov2.initialize("Test DAO", creator, address(token), address(0), defaultConfig(), initialCouncil());
+        freshGov2.initialize("Test DAO", creator, address(token), address(0), defaultConfig(), initialCouncil(), address(0));
     }
 
     function test_Constructor_RevertsOnInvalidQuorumAboveCouncilSize() public {
@@ -120,7 +139,7 @@ contract DelegateGovernanceTest is Test {
 
         DelegateGovernance freshGov3 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
         vm.expectRevert(DelegateGovernance.InvalidConfiguration.selector);
-        freshGov3.initialize("Test DAO", creator, address(token), treasury, badConfig, initialCouncil());
+        freshGov3.initialize("Test DAO", creator, address(token), treasury, badConfig, initialCouncil(), address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -250,9 +269,9 @@ contract DelegateGovernanceTest is Test {
         token.setBalance(dave, 200 ether);
 
         vm.prank(eve);
-        gov.declareCandidacy(electionId);
+        gov.declareCandidacy(electionId, 0);
         vm.prank(dave);
-        gov.declareCandidacy(electionId);
+        gov.declareCandidacy(electionId, 1);
 
         DelegateGovernance.Election memory election = gov.getElection(electionId);
         vm.roll(election.candidacyDeadline + 1);
@@ -273,15 +292,19 @@ contract DelegateGovernanceTest is Test {
         vm.roll(election.votingEndBlock + 1);
         gov.finalizeElection(electionId);
 
-        // Eve and dave were the only two candidates - both win seats (3rd
-        // seat vacant, since there were only 2 candidates for 3 seats).
+        // Eve won seat 0 and dave seat 1; nobody ran for seat 2, so its
+        // holder (carol) keeps it.
         assertTrue(gov.isCouncilMember(eve));
         assertTrue(gov.isCouncilMember(dave));
-        // Old council members who weren't candidates are no longer members.
-        assertFalse(gov.isCouncilMember(carol));
+        assertTrue(gov.isCouncilMember(carol));
+        assertFalse(gov.isCouncilMember(alice));
+        assertFalse(gov.isCouncilMember(bob));
 
         address[] memory newCouncil = gov.getCouncil();
-        assertEq(newCouncil.length, 2);
+        assertEq(newCouncil.length, 3);
+        assertEq(newCouncil[0], eve);
+        assertEq(newCouncil[1], dave);
+        assertEq(newCouncil[2], carol);
     }
 
     function test_DeclareCandidacy_RevertsBelowThreshold() public {
@@ -292,7 +315,7 @@ contract DelegateGovernanceTest is Test {
 
         vm.prank(dave);
         vm.expectRevert(DelegateGovernance.CandidacyThresholdNotMet.selector);
-        gov.declareCandidacy(electionId);
+        gov.declareCandidacy(electionId, 0);
     }
 
     function test_VoteInElection_RevertsOnDuplicateCandidate() public {
@@ -301,7 +324,7 @@ contract DelegateGovernanceTest is Test {
 
         token.setBalance(eve, 200 ether);
         vm.prank(eve);
-        gov.declareCandidacy(electionId);
+        gov.declareCandidacy(electionId, 0);
 
         DelegateGovernance.Election memory election = gov.getElection(electionId);
         vm.roll(election.candidacyDeadline + 1);
@@ -350,7 +373,8 @@ contract DelegateGovernanceTest is Test {
 
         assertFalse(gov.isCouncilMember(alice));
         address[] memory council = gov.getCouncil();
-        assertEq(council.length, 2);
+        assertEq(council.length, 3, "seats keep their numbers");
+        assertEq(council[0], address(0), "alice's seat sits vacant");
     }
 
     function test_FullRecall_DelegateStaysWhenQuorumNotMet() public {
@@ -384,4 +408,144 @@ contract DelegateGovernanceTest is Test {
         vm.expectRevert(DelegateGovernance.Unauthorized.selector);
         gov.setTreasury(address(0xBEEF));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                              SEATS
+    //////////////////////////////////////////////////////////////*/
+
+    /// Opens an election with eve and dave both running for `seat`.
+    function _contest(uint16 seat) internal returns (uint256 electionId, DelegateGovernance.Election memory election) {
+        vm.warp(gov.currentTermEnd());
+        electionId = gov.startElection();
+        token.setBalance(eve, 200 ether);
+        token.setBalance(dave, 200 ether);
+        vm.prank(eve);
+        gov.declareCandidacy(electionId, seat);
+        vm.prank(dave);
+        gov.declareCandidacy(electionId, seat);
+        election = gov.getElection(electionId);
+        vm.roll(election.candidacyDeadline + 1);
+    }
+
+    function _vote(uint256 electionId, uint256 snapshot, address voter, uint256 weight, address candidate) internal {
+        token.setPastVotes(voter, snapshot, weight);
+        address[] memory picks = new address[](1);
+        picks[0] = candidate;
+        vm.prank(voter);
+        gov.voteInElection(electionId, picks);
+    }
+
+    function test_Seat_MostVotesWins() public {
+        (uint256 id, DelegateGovernance.Election memory e) = _contest(1);
+        _vote(id, e.snapshotBlock, alice, 100 ether, eve);
+        _vote(id, e.snapshotBlock, bob, 300 ether, dave);
+        vm.roll(e.votingEndBlock + 1);
+        gov.finalizeElection(id);
+        address[] memory c = gov.getCouncil();
+        assertEq(c[1], dave);
+        assertEq(c[0], alice, "uncontested seats keep their holders");
+        assertEq(c[2], carol);
+        assertFalse(gov.isCouncilMember(bob));
+    }
+
+    function test_Seat_TieWithoutASourceGoesToTheFirstToDeclare() public {
+        (uint256 id, DelegateGovernance.Election memory e) = _contest(0);
+        _vote(id, e.snapshotBlock, alice, 100 ether, eve);
+        _vote(id, e.snapshotBlock, bob, 100 ether, dave);
+        vm.roll(e.votingEndBlock + 1);
+        gov.finalizeElection(id);
+        assertEq(gov.getCouncil()[0], eve);
+    }
+
+    function test_Seat_TieIsDrawn() public {
+        MockTieDraw draw = new MockTieDraw();
+        DelegateGovernance g2 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
+        g2.initialize("Test DAO", creator, address(token), treasury, defaultConfig(), initialCouncil(), address(draw));
+        gov = g2;
+        (uint256 id, DelegateGovernance.Election memory e) = _contest(2);
+        _vote(id, e.snapshotBlock, alice, 100 ether, eve);
+        _vote(id, e.snapshotBlock, bob, 100 ether, dave);
+        vm.roll(e.votingEndBlock + 1);
+
+        gov.finalizeElection(id);
+        assertTrue(gov.awaitingDraw(id));
+        assertEq(draw.lastRequest(), gov.tieRequestId(id));
+        vm.expectRevert(DelegateGovernance.DrawPending.selector);
+        gov.resolveTies(id);
+
+        // Randomness picking the second tied candidate (index 1 of 2).
+        uint256 r;
+        while (uint256(keccak256(abi.encode(r, uint16(2)))) % 2 != 1) r++;
+        draw.fulfill(gov.tieRequestId(id), r);
+        gov.resolveTies(id);
+        assertEq(gov.getCouncil()[2], dave);
+        assertTrue(gov.getElection(id).finalized);
+    }
+
+    function test_Seat_NoTieNeedsNoDraw() public {
+        MockTieDraw draw = new MockTieDraw();
+        DelegateGovernance g2 = DelegateGovernance(Clones.clone(address(new DelegateGovernance())));
+        g2.initialize("Test DAO", creator, address(token), treasury, defaultConfig(), initialCouncil(), address(draw));
+        gov = g2;
+        (uint256 id, DelegateGovernance.Election memory e) = _contest(2);
+        _vote(id, e.snapshotBlock, alice, 100 ether, eve);
+        vm.roll(e.votingEndBlock + 1);
+        gov.finalizeElection(id);
+        assertFalse(gov.awaitingDraw(id));
+        assertEq(gov.getCouncil()[2], eve);
+    }
+
+    function test_Seat_OneCandidatePerSeatPerBallot() public {
+        (uint256 id,) = _contest(0);
+        address[] memory picks = new address[](2);
+        (picks[0], picks[1]) = (eve, dave);
+        vm.prank(alice);
+        vm.expectRevert(DelegateGovernance.TwoCandidatesForOneSeat.selector);
+        gov.voteInElection(id, picks);
+    }
+
+    function test_Seat_InvalidSeatAndOneSeatPerCandidate() public {
+        vm.warp(gov.currentTermEnd());
+        uint256 id = gov.startElection();
+        token.setBalance(eve, 200 ether);
+        vm.startPrank(eve);
+        vm.expectRevert(DelegateGovernance.InvalidSeat.selector);
+        gov.declareCandidacy(id, 3);
+        gov.declareCandidacy(id, 1);
+        vm.expectRevert(DelegateGovernance.AlreadyCandidate.selector);
+        gov.declareCandidacy(id, 2);
+        vm.stopPrank();
+        (uint16 seat, bool running) = gov.seatOf(id, eve);
+        assertEq(seat, 1);
+        assertTrue(running);
+        assertEq(gov.seatCandidates(id, 1).length, 1);
+    }
+
+    function test_Seat_AHolderWhoWinsAnotherSeatGivesTheirOldOneUp() public {
+        vm.warp(gov.currentTermEnd());
+        uint256 id = gov.startElection();
+        token.setBalance(carol, 200 ether);
+        vm.prank(carol); // carol holds seat 2 and runs for seat 0; nobody runs for seat 2
+        gov.declareCandidacy(id, 0);
+        DelegateGovernance.Election memory e = gov.getElection(id);
+        vm.roll(e.candidacyDeadline + 1);
+        _vote(id, e.snapshotBlock, alice, 100 ether, carol);
+        vm.roll(e.votingEndBlock + 1);
+        gov.finalizeElection(id);
+        address[] memory c = gov.getCouncil();
+        assertEq(c[0], carol);
+        assertEq(c[2], address(0), "her old seat is vacant, not held twice");
+    }
+
+    function test_Seat_LabelsByProposalOnly() public {
+        vm.expectRevert(DelegateGovernance.Unauthorized.selector);
+        gov.setSeatLabel(0, "Treasurer");
+        vm.prank(address(gov));
+        gov.setSeatLabel(0, "Treasurer");
+        assertEq(gov.seatLabel(0), "Treasurer");
+        vm.prank(address(gov));
+        vm.expectRevert(DelegateGovernance.InvalidSeat.selector);
+        gov.setSeatLabel(3, "Nope");
+    }
 }
+

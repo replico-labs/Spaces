@@ -68,8 +68,14 @@ contract NFTMarketplaceWrapperTest is Test {
     address internal treasury = makeAddr("treasury");
     address internal attacker = makeAddr("attacker");
 
+    /// @dev A clone of the implementation, set up as WrapperFactory does.
+    function _deploy(address gov, address treasury_) internal returns (NFTMarketplaceWrapper w) {
+        w = NFTMarketplaceWrapper(payable(Clones.clone(address(new NFTMarketplaceWrapper()))));
+        w.initialize(gov, treasury_);
+    }
+
     function setUp() public {
-        wrapper = new NFTMarketplaceWrapper(governance, treasury);
+        wrapper = _deploy(governance, treasury);
         nft721 = new TestERC721();
         nft1155 = new TestERC1155();
         token20 = new TestERC20();
@@ -85,13 +91,15 @@ contract NFTMarketplaceWrapperTest is Test {
     }
 
     function test_Constructor_RevertsOnZeroGovernance() public {
+        NFTMarketplaceWrapper fresh = NFTMarketplaceWrapper(payable(Clones.clone(address(new NFTMarketplaceWrapper()))));
         vm.expectRevert(NFTMarketplaceWrapper.ZeroAddress.selector);
-        new NFTMarketplaceWrapper(address(0), treasury);
+        fresh.initialize(address(0), treasury);
     }
 
     function test_Constructor_RevertsOnZeroTreasury() public {
+        NFTMarketplaceWrapper fresh = NFTMarketplaceWrapper(payable(Clones.clone(address(new NFTMarketplaceWrapper()))));
         vm.expectRevert(NFTMarketplaceWrapper.ZeroAddress.selector);
-        new NFTMarketplaceWrapper(governance, address(0));
+        fresh.initialize(governance, address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -356,7 +364,7 @@ contract NFTMarketplaceWrapperTest is Test {
     function _realTreasuryWrapper() internal returns (NFTMarketplaceWrapper w, Treasury t) {
         t = Treasury(payable(Clones.clone(address(new Treasury()))));
         t.initialize(governance);
-        w = new NFTMarketplaceWrapper(governance, address(t));
+        w = _deploy(governance, address(t));
     }
 
     function test_RealTreasury_SweepNativeArrives() public {

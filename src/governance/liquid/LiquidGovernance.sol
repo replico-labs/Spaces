@@ -180,6 +180,10 @@ contract LiquidGovernance is Initializable {
     string public daoName;
     address public creator;
     address public governanceToken;
+    /// @notice The voting token each proposal was created with; votes,
+    ///         quorum and state for that proposal always use it, so a token
+    ///         change (setGovernanceToken) leaves open proposals alone.
+    mapping(uint256 => address) public proposalToken;
     address public treasury;
     LiquidGovernanceConfig internal _config;
 
@@ -351,6 +355,7 @@ contract LiquidGovernance is Initializable {
         p.snapshotBlock = block.number - 1;
         p.startBlock = block.number + _config.votingDelay;
         p.endBlock = p.startBlock + _config.votingPeriod;
+        proposalToken[proposalId] = governanceToken;
 
         for (uint256 i = 0; i < actions.length; i++) {
             p.actions.push(actions[i]);
@@ -383,7 +388,7 @@ contract LiquidGovernance is Initializable {
         receipt.hasVoted = true;
         receipt.support = support;
 
-        weight = IVotesToken(governanceToken).getPastVotes(msg.sender, p.snapshotBlock);
+        weight = IVotesToken(proposalToken[proposalId]).getPastVotes(msg.sender, p.snapshotBlock);
         receipt.weight = weight;
 
         if (support == VoteType.For) p.forVotes += weight;
@@ -436,7 +441,7 @@ contract LiquidGovernance is Initializable {
         delegatorReceipt.support = foundSupport;
         delegatorReceipt.resolvedVia = resolvedVia;
 
-        uint256 weight = IVotesToken(governanceToken).getPastVotes(delegator, p.snapshotBlock);
+        uint256 weight = IVotesToken(proposalToken[proposalId]).getPastVotes(delegator, p.snapshotBlock);
         delegatorReceipt.weight = weight;
 
         if (foundSupport == VoteType.For) p.forVotes += weight;
@@ -471,7 +476,7 @@ contract LiquidGovernance is Initializable {
         if (p.queuedAt != 0) revert ProposalAlreadyQueued();
         if (block.number <= p.endBlock) revert VotingNotStarted();
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock);
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
 
         if (totalSupply == 0 || (participation * 10_000) / totalSupply < _config.quorumBps) {
@@ -570,7 +575,7 @@ contract LiquidGovernance is Initializable {
             return ProposalState.Queued;
         }
 
-        uint256 totalSupply = IVotesToken(governanceToken).getPastTotalSupply(p.snapshotBlock);
+        uint256 totalSupply = IVotesToken(proposalToken[proposalId]).getPastTotalSupply(p.snapshotBlock);
         uint256 participation = p.forVotes + p.againstVotes + p.abstainVotes;
         uint256 decisive = p.forVotes + p.againstVotes;
 
