@@ -7,9 +7,12 @@ export RANDOMNESS_SOURCE=0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D
 
 forge build --via-ir
 
+# Monad has no 24 KB contract limit, but forge checks it and stops to ask whether to go on,
+# which a non-interactive run can't answer: switch the check off.
+
 for M in DAO QuadraticDAO LiquidDAO OptimisticDAO DelegateDAO BoardDAO SortitionDAO ConvictionDAO SowellianDAO DecisionMarketsDAO Wrapper; do
   forge script script/Deploy${M}Factory.s.sol:Deploy${M}Factory \
-    --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --via-ir \
+    --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --via-ir --disable-code-size-limit \
     | tee -a monad-deploy.log
 done
 
@@ -19,7 +22,7 @@ LAUNCH_FACTORIES=$(for F in DAOFactory QuadraticDAOFactory LiquidDAOFactory Opti
 done | paste -sd, -)
 export LAUNCH_FACTORIES
 forge script script/DeployLaunchFactory.s.sol:DeployLaunchFactory \
-  --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --via-ir \
+  --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --via-ir --disable-code-size-limit \
   | tee -a monad-deploy.log
 
 grep "Factory deployed at" monad-deploy.log

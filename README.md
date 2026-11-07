@@ -340,22 +340,26 @@ DAOs are created from a deployed factory with the matching `Create<Model>DAO.s.s
 
 Only factory addresses need to be configured anywhere; implementation addresses are baked into each factory's immutable storage at deployment.
 
-**The addresses below predate token changes, consent locks, the converter and the clone-based wrappers** (per-proposal tokens, Board keeping the token, `createStaking`/`createTokenForSwitch`, `WrapperFactory`). Those need every factory and the WrapperFactory redeployed on each network (the chain scripts above); DAOs from the old factories keep the old behaviour.
+**Redeployed on all three testnets from Spaces-dev `overnight` at `f7a675a`** (token changes, consent locks, the converter, clone-based wrappers, Distributors, raises, prop-firm vaults and the Launcher). On each network the Launcher approves the nine token models' factories (not Board's), and the deployer `0x51F5…8F27` owns it. DAOs from the earlier factories keep the earlier behaviour.
 
 ### Monad Testnet
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0x1E74465b71Efc31bA82595184901F4673Fd78f8b` |
-| QuadraticDAOFactory | `0x8318EFffde90051e15BCa31c7c152c21a8327F26` |
-| LiquidDAOFactory | `0xC9D558424FB62AB38557F6B0e4d37072417e267c` |
-| OptimisticDAOFactory | `0x24c429c21C27034Aa7C7D5cF426E2489E8117B82` |
-| DelegateDAOFactory | `0xCd3848a3c7B8Ad83147043bA7dF6627e959c3a25` |
-| BoardDAOFactory | `0xdB646047e92e47CdE63F7a4087aa193dd098ee1e` |
-| SortitionDAOFactory | `0x1183fbb37da24a5CdA9dE6ffe7B214a0F65309a0` |
-| ConvictionDAOFactory | `0x9447a8e4e974c2618C74F5f39D5d8FC9648da9aA` |
-| SowellianDAOFactory | `0x5d6107C5f81b025454424435D9Fb9A27CeFC5b71` |
-| DecisionMarketsDAOFactory | `0xafa037279B093e12e21d56B780Aacef9Cea4034C` |
+| DAOFactory (token-weighted) | `0xe9f08BC4530aEC3b247712AB08ae2AC21511627c` |
+| QuadraticDAOFactory | `0x9C48FbC710175eFE0D9f807B638913Af59c67B92` |
+| LiquidDAOFactory | `0x1917f736E68161cFA4501A4d8aBB44b7fae672D0` |
+| OptimisticDAOFactory | `0xe74203913F46bd2d1363A84Edbd2aaab0dd3000c` |
+| DelegateDAOFactory | `0x38566A3FE7AdedA3C0B9E60582fC046dEFdc46bb` |
+| BoardDAOFactory | `0x3687345D425f28DAB0787Ad563FB1F18e4c2d906` |
+| SortitionDAOFactory | `0xf138663aE887E34e3255f0f4F1DE360672cEF637` |
+| ConvictionDAOFactory | `0xac8690c209a061BC3a961131B7c13eA944570b96` |
+| SowellianDAOFactory | `0x32C05c2C5A988Df663c30808f1a6Aa5dddEd3c83` |
+| DecisionMarketsDAOFactory | `0x6b49659aD976538d6D3E139B4aDA8CA47f667eB2` |
+| WrapperFactory | `0xF0A5CA6824F50cdeC150eD52ed35BD4DEA48EA01` |
+| DistributionFactory | `0xC798DE31Be7451F3F593B67DFE132C8F3c588fc3` |
+| VaultFactory | `0xA85bA3cdAe108c713Fb007BebA1f121cDe2cd939` |
+| Launcher | `0xeC86C73EcBD2001d382570B891C3a536A1AfcC8e` |
 | PythEntropyRandomnessAdapter (Sortition) | `0x422cbB19F504D57cB909AC149e97f48Ba8c1b92D` |
 | PythPriceFeedAdapter (Sowellian) | `0x6C582533290855Af7F95d4484A6bb2e8C317949e` |
 
@@ -386,16 +390,20 @@ Built with `FOUNDRY_PROFILE=size-limited` (EIP-170). In the bot this network is 
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0xE7C0f3c8C88B670Ae2aF94f9BA822783fF46309d` |
-| QuadraticDAOFactory | `0xF33D2623642C03Fa40F4A023a57Daeac08D1e22c` |
-| LiquidDAOFactory | `0x68cf661C6D02F06866e7FeCa876BC0d9DAAacC02` |
-| OptimisticDAOFactory | `0x5d7CCd6D1ac7877B878912747D7EcbC307eA8B28` |
-| DelegateDAOFactory | `0xfa4179B38ebcf58B796F3a47260bBdE68b49d311` |
-| BoardDAOFactory | `0x41450e38E4a0D047EC9e53dA67fCaf28285B6E18` |
-| SortitionDAOFactory | `0x376722eAE27cf44ab461EC185CaA44c1AA92d016` |
-| ConvictionDAOFactory | `0x05Ad0011c4b9F76fd2ADd98FA75569897dC29c73` |
-| SowellianDAOFactory | `0xf9B54c2bACE4ffcaa9FBB4A6B5b0cE1FDf467e2B` |
-| DecisionMarketsDAOFactory | `0x0374551bc05Abb36CAac883568528D8E4ba76d86` |
+| DAOFactory (token-weighted) | `0x9683D2ed3eDC95c2CdF00240Fa4c418eD3d4710d` |
+| QuadraticDAOFactory | `0x1C6E2F981EC3da437749bfe9Ab0c4649b2BD190d` |
+| LiquidDAOFactory | `0x4BC124B2b54004b82CED8F74a02A0273575F448e` |
+| OptimisticDAOFactory | `0xbe773ED78F49372c7558DF42c98d99C5A2393615` |
+| DelegateDAOFactory | `0xE0E0462AD1bfE377a7a5B3C8DfC03DBcc897F7Da` |
+| BoardDAOFactory | `0x51fA555b4b54C0A4588773B1A4bc10AFa72B54ae` |
+| SortitionDAOFactory | `0xdFEafDf01A252BFE8CEc1cc5c53632a7fCc84B5B` |
+| ConvictionDAOFactory | `0x428ee0671e1258Bf3F1F1f0A4ba5e56751C7401d` |
+| SowellianDAOFactory | `0x1f53d4200481Ffd8F224620389B9aBA1127d86f2` |
+| DecisionMarketsDAOFactory | `0x6170c7d9F52FdA28c164caD00D3a57dd71d5feD1` |
+| WrapperFactory | `0x97f4f849789E0E70ffbE8040e74B8144AB860f05` |
+| DistributionFactory | `0x7a360DD9D2e7C58AC4A7eA44AE8a7F545Dd0a9e7` |
+| VaultFactory | `0xfc9cef53c7ECf636788E0422348AD065b1Bfab04` |
+| Launcher | `0x3264e5d5625afEb6d7E40812889956a75b63df27` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xaB7325AFfF2A7851457c52565Cfe4DC53DC9B1Fc` |
 | PythPriceFeedAdapter (Sowellian) | `0x9d109ba81002B85a48252115Ed5487F6b60C78F9` |
 
@@ -413,16 +421,20 @@ Built with `FOUNDRY_PROFILE=size-limited` and deployed in big blocks. In the bot
 
 | Contract | Address |
 |---|---|
-| DAOFactory (token-weighted) | `0xa1Fa1b05aF481927696D82f66E3f0e05a30e2C85` |
-| QuadraticDAOFactory | `0xdDc69979c91cb86C287E8dE71652b54304Ae1d90` |
-| LiquidDAOFactory | `0xaBAcb2156C1E2281314eA62D192ab631b1655020` |
-| OptimisticDAOFactory | `0x9E427292547DCcd3e0Fda5280E6F5bdE8B668fb6` |
-| DelegateDAOFactory | `0x3D1F2ba56477a32fDC68fc984956039586Ebd8b2` |
-| BoardDAOFactory | `0x69f24C7732045E11414224C39BA93654F6Dc30BC` |
-| SortitionDAOFactory | `0x413CA37e89d4E4007C52fD11Bf4cc1dF1DAFaC2e` |
-| ConvictionDAOFactory | `0x382e5502e5B853477449E506e379B92E9b603dBb` |
-| SowellianDAOFactory | `0x485AA51eaFB8A3030FB00040272CC2a38D4E85aF` |
-| DecisionMarketsDAOFactory | `0x2f6Cf6Cbaac436DDBb7590501416f57F890f2478` |
+| DAOFactory (token-weighted) | `0x885bC260f2d874b3d625012a5e4EEdFbED3a4C7B` |
+| QuadraticDAOFactory | `0x3886ba51dD8fC577a6fA619ECcaEf874A9951D98` |
+| LiquidDAOFactory | `0xde0feb546f02507C051948B026da8A2CB6dAa16a` |
+| OptimisticDAOFactory | `0xaCB58D40dBF7F22F71AE34cF0204FcD7F58269Bf` |
+| DelegateDAOFactory | `0x91651883593D68d8D171c3f389FF70f0289533BF` |
+| BoardDAOFactory | `0x364adC2b2016979Fe33A4BE69512297ef8010EF0` |
+| SortitionDAOFactory | `0x96394a6474bDa19aB2a3f8B0089f2D90A33247aD` |
+| ConvictionDAOFactory | `0xEE959dAaC6f55cffAd3054294b06906a1f039ccf` |
+| SowellianDAOFactory | `0xf4846b4B01992f8473C8190b4b18496Ad3f07357` |
+| DecisionMarketsDAOFactory | `0x78A2ddC9a173a9388b0818fd23BE36BBB5232669` |
+| WrapperFactory | `0x2473C83803d48D5EE453bbaee34097757c83c715` |
+| DistributionFactory | `0xdc450C47Fdea51D5BeEEe57C8D80c43bd592F7aE` |
+| VaultFactory | `0x90865067eFa377057c6C0F10a2639d01F2ba6963` |
+| Launcher | `0x5D45812705772b7a887D280c4eEB993094486e31` |
 | PythEntropyRandomnessAdapter (Sortition) | `0xeEdE1CBa9f2A86AEB145a71167ee2020396C3BD3` |
 | PythPriceFeedAdapter (Sowellian) | `0x801883FD3347e5F400fF8CE24015D60449f26dAf` |
 
